@@ -1,0 +1,8 @@
+{
+  "name": "Child Tracker",
+  "short_name": "Tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e1318",
+  "theme_color": "#0b6e68"
+}

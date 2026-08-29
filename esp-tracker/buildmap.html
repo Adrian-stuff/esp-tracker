@@ -1,0 +1,552 @@
+<title>Tracker Build Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --ground:#EDF0F4; --surface:#FFFFFF; --surface-2:#F5F7FA; --surface-3:#E7ECF2;
+  --ink:#141A21; --ink-2:#4C5866; --ink-3:#6D7B8B;
+  --line:#CFD8E2; --line-2:#E2E8F0;
+  --accent:#0B6E68; --accent-soft:#DFEFEC;
+  --sos:#B93630; --sos-soft:#FAE8E6;
+  --warn:#8A6212; --warn-soft:#FBF0DC;
+  --ok:#2C6E4E; --ok-soft:#E2F0E8;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+    --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+    --line:#2B3641; --line-2:#222C36;
+    --accent:#46C3B3; --accent-soft:#10322F;
+    --sos:#F0776F; --sos-soft:#3A1D1B;
+    --warn:#D9A441; --warn-soft:#332812;
+    --ok:#63C48F; --ok-soft:#123023;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+  --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+  --line:#2B3641; --line-2:#222C36;
+  --accent:#46C3B3; --accent-soft:#10322F;
+  --sos:#F0776F; --sos-soft:#3A1D1B;
+  --warn:#D9A441; --warn-soft:#332812;
+  --ok:#63C48F; --ok-soft:#123023;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--serif); font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1100px; margin:0 auto; padding:0 26px 96px}
+.prose{max-width:70ch}
+
+header.masthead{
+  border-bottom:2px solid var(--ink); padding:56px 0 26px; margin-bottom:20px;
+  display:flex; flex-direction:column; gap:16px;
+}
+.eyebrow{
+  font-family:var(--mono); font-size:11px; font-weight:500;
+  letter-spacing:.15em; text-transform:uppercase; color:var(--accent);
+  display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+}
+.eyebrow .sep{width:4px;height:4px;border-radius:50%;background:var(--line);flex:none}
+h1{
+  font-family:var(--sans); font-weight:700; font-size:clamp(32px,4.6vw,46px);
+  line-height:1.05; letter-spacing:-.028em; margin:0;
+}
+.standfirst{font-size:17.5px; line-height:1.5; color:var(--ink-2); max-width:62ch; margin:0}
+
+h2{font-family:var(--sans); font-weight:600; font-size:22px; letter-spacing:-.016em; margin:0}
+h3{font-family:var(--sans); font-weight:600; font-size:14px; letter-spacing:-.004em; margin:0}
+section{margin-top:52px; display:flex; flex-direction:column; gap:18px}
+p{margin:0}
+.sec-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+  border-bottom:1px solid var(--line); padding-bottom:10px}
+.sec-num{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.14em;
+  color:var(--ink-3); text-transform:uppercase}
+
+code{font-family:var(--mono); font-size:.86em; background:var(--surface-3);
+  padding:1px 5px; border-radius:2px; color:var(--ink); word-break:break-word}
+
+/* status board */
+.board{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:1px;
+  background:var(--line); border:1px solid var(--line)}
+.card{background:var(--surface); padding:16px; display:flex; flex-direction:column; gap:7px}
+.card .who{font-family:var(--mono); font-size:10px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--ink-3)}
+.card .what{font-family:var(--sans); font-size:14.5px; font-weight:600; line-height:1.3}
+.card .note{font-size:13px; color:var(--ink-2); line-height:1.45}
+.tag{display:inline-block; align-self:flex-start; font-family:var(--mono); font-size:10px;
+  font-weight:600; letter-spacing:.06em; padding:2px 7px; border-radius:2px}
+.tag.done{background:var(--ok-soft); color:var(--ok)}
+.tag.part{background:var(--warn-soft); color:var(--warn)}
+.tag.todo{background:var(--sos-soft); color:var(--sos)}
+
+/* contracts */
+.contracts{display:flex; flex-direction:column; gap:1px; background:var(--line);
+  border:1px solid var(--line)}
+.contract{background:var(--surface); padding:16px 18px; display:grid;
+  grid-template-columns:30px 1fr; gap:14px; align-items:start}
+.contract .n{font-family:var(--mono); font-size:13px; font-weight:600; color:var(--sos)}
+.contract .body{display:flex; flex-direction:column; gap:5px}
+.contract .rule{font-family:var(--sans); font-size:14.5px; font-weight:600; line-height:1.35}
+.contract .why{font-size:13.5px; color:var(--ink-2); line-height:1.5}
+
+/* file tree */
+pre.tree{
+  font-family:var(--mono); font-size:12.5px; line-height:1.75; margin:0;
+  background:var(--surface); border:1px solid var(--line); padding:18px 20px;
+  overflow-x:auto; color:var(--ink-2);
+}
+pre.tree b{color:var(--ink); font-weight:600}
+pre.tree i{color:var(--ink-3); font-style:normal}
+pre.tree u{color:var(--accent); text-decoration:none; font-weight:500}
+
+/* recipes */
+.recipes{display:flex; flex-direction:column; gap:1px; background:var(--line);
+  border:1px solid var(--line)}
+.recipe{background:var(--surface); padding:15px 18px; display:grid;
+  grid-template-columns:minmax(150px,1fr) minmax(200px,1.1fr) minmax(180px,1.3fr); gap:18px}
+.recipe .want{font-family:var(--sans); font-size:14px; font-weight:600; line-height:1.35}
+.recipe .files{font-family:var(--mono); font-size:11.5px; color:var(--accent); line-height:1.7}
+.recipe .files span{display:block}
+.recipe .care{font-size:13px; color:var(--ink-2); line-height:1.45}
+.recipe.head{background:var(--surface-2)}
+.recipe.head > *{font-family:var(--mono); font-size:10px; font-weight:600;
+  letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3)}
+
+.tablewrap{overflow-x:auto; border:1px solid var(--line); background:var(--surface)}
+table{border-collapse:collapse; width:100%; min-width:600px; font-family:var(--sans); font-size:13.5px}
+th{text-align:left; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--ink-3); padding:11px 14px;
+  border-bottom:1px solid var(--line); background:var(--surface-2); white-space:nowrap}
+td{padding:11px 14px; border-bottom:1px solid var(--line-2); color:var(--ink-2);
+  vertical-align:top; line-height:1.45}
+td:first-child{color:var(--ink); font-weight:500}
+tr:last-child td{border-bottom:none}
+td code{font-size:12px}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+.warnbox{background:var(--sos-soft); border:1px solid var(--sos); border-left-width:3px;
+  padding:18px 20px; display:flex; flex-direction:column; gap:9px}
+.warnbox .tag2{font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--sos)}
+.warnbox p{font-size:14.5px; color:var(--ink-2); max-width:70ch}
+.warnbox b{color:var(--ink)}
+
+footer{margin-top:72px; padding-top:22px; border-top:1px solid var(--line);
+  font-family:var(--mono); font-size:11.5px; color:var(--ink-3); line-height:1.7; max-width:72ch}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:820px){
+  .recipe{grid-template-columns:1fr; gap:8px}
+  .recipe.head{display:none}
+  .recipe .files{border-left:2px solid var(--line); padding-left:10px}
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <div class="eyebrow">
+    <span>System reference</span><span class="sep"></span>
+    <span>v4</span><span class="sep"></span>
+    <span>ESP32 &middot; SIM800L &middot; PH</span>
+  </div>
+  <h1>Tracker Build Map</h1>
+  <p class="standfirst">Where every part lives, what it does, and what to touch to change it.
+  The companion page argues <em>why</em> the design is this shape; this one is for when you
+  already know and just need to find the file.</p>
+</header>
+
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>What actually runs today</h2></div>
+  <p class="prose">Read this before planning work. Two of the five pieces are tested; the firmware
+  is structured but unbuilt, because there is no ESP32 toolchain on the machine this was written
+  on.</p>
+  <div class="board">
+    <div class="card">
+      <div class="who">supabase/migrations</div>
+      <div class="what">Postgres schema + RLS + cron</div>
+      <span class="tag done">validated</span>
+      <div class="note">59 statements, parsed with libpg_query. RLS on all 14 tables.</div>
+    </div>
+    <div class="card">
+      <div class="who">supabase/functions</div>
+      <div class="what">ingest &middot; dispatch &middot; locate</div>
+      <span class="tag part">written, not deployed</span>
+      <div class="note">Deno/TypeScript. Device auth, escalation drainer, SMS downlink.</div>
+    </div>
+    <div class="card">
+      <div class="who">web/</div>
+      <div class="what">Vercel dashboard</div>
+      <span class="tag part">written, not deployed</span>
+      <div class="note">Static. Supabase Auth + PostgREST + Realtime, no API layer.</div>
+    </div>
+    <div class="card">
+      <div class="who">server/</div>
+      <div class="what">FastAPI + SQLite reference</div>
+      <span class="tag done">tested end to end</span>
+      <div class="note">Still the best local dev target — <code>SMS_PROVIDER=console</code> exercises the whole ladder offline.</div>
+    </div>
+    <div class="card">
+      <div class="who">survey/analyze.py</div>
+      <div class="what">Coverage report</div>
+      <span class="tag done">tested</span>
+      <div class="note">Verified against a synthetic route with a deliberately bad classroom.</div>
+    </div>
+    <div class="card">
+      <div class="who">survey/src</div>
+      <div class="what">Phase 0 survey firmware</div>
+      <span class="tag part">written, uncompiled</span>
+      <div class="note">Complete logic — AT parsing, Wi-Fi scan, LittleFS log, waypoints.</div>
+    </div>
+    <div class="card">
+      <div class="who">tracker/src</div>
+      <div class="what">Worn device</div>
+      <span class="tag todo">scaffold + stubs</span>
+      <div class="note">Pins, tunables, feedback and motion are real. <code>modem.cpp</code> is the big TODO.</div>
+    </div>
+    <div class="card">
+      <div class="who">scanner/src</div>
+      <div class="what">Gate attendance</div>
+      <span class="tag todo">scaffold + stubs</span>
+      <div class="note">RC522 read loop works. Uplink and offline queue are TODO.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">01b</span><h2>Two deployment paths &mdash; know which you are on</h2></div>
+  <p class="prose">There are two working backends. They share the schema and the contracts and
+  nothing else, so the first question before any change is <em>which one am I editing</em>.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th>A &mdash; Supabase + Vercel</th><th>B &mdash; FastAPI</th></tr></thead>
+      <tbody>
+        <tr><td>Database</td><td>Supabase Postgres</td><td>SQLite (Postgres-ready)</td></tr>
+        <tr><td>Device ingest</td><td><code>functions/ingest</code> (Deno)</td><td><code>app/main.py</code></td></tr>
+        <tr><td>Escalation</td><td><code>alert_queue</code> + pg_cron/min</td><td>asyncio task</td></tr>
+        <tr><td>Live updates</td><td>Supabase Realtime</td><td>WebSocket hub</td></tr>
+        <tr><td>Auth</td><td>Supabase Auth (MFA built in)</td><td>argon2 + TOTP, hand-rolled</td></tr>
+        <tr><td>Runs where</td><td>Nowhere — serverless</td><td>Fly / Railway / your laptop</td></tr>
+        <tr><td>Best for</td><td><b>Production</b></td><td><b>Local dev</b>, and reading to understand the system</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose"><b>Why the ladder had to change.</b> A Vercel function is killed the moment it
+  returns its response, so a coroutine that sleeps for 300&nbsp;s cannot exist. Pending rungs
+  became rows with a <code>due_at</code>. That fixed a real latent weakness at the same time: the
+  asyncio version lost every pending escalation on restart, and rows survive.</p>
+  <p class="prose"><b>Rung 1 is deliberately not queued.</b> pg_cron granularity is 60&nbsp;s, so a
+  queued rung due at t+60 fires somewhere in t+60..t+120. Acceptable for the secondary SMS and the
+  voice calls &mdash; but the first alert must never wait for a scheduler, so it is sent
+  synchronously inside the ingest request.</p>
+
+  <div class="warnbox">
+    <div class="tag2">Path A &mdash; before any real data</div>
+    <p><b>RLS is the entire security model.</b> Supabase exposes every table over PostgREST using
+    the anon key, which ships in your frontend bundle. A table without RLS enabled is readable by
+    anyone who opens devtools. For a live database of a child's location that is not a
+    misconfiguration &mdash; it is the worst outcome this project has.</p>
+    <p><code>0002_rls.sql</code> enables RLS on all fourteen tables, with policies routed through
+    <code>device_access</code>. Three tables &mdash; <code>alert_queue</code>,
+    <code>access_log</code>, <code>integration_health</code> &mdash; get <b>no policies at all</b>:
+    RLS on with nothing matching means they are invisible to everyone but the service role.
+    Verify in the Table Editor before real data goes in.</p>
+    <p>The <b>service role key bypasses RLS entirely</b>. It lives in <code>supabase secrets</code>
+    and Vercel environment variables. Never in <code>web/</code>, never in git, never in a client.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>Contracts &mdash; change anything but these</h2></div>
+  <p class="prose">Everything else in this system is a preference. These five are load-bearing:
+  each one exists because breaking it produces a failure that looks like something else, which is
+  the expensive kind.</p>
+  <div class="contracts">
+    <div class="contract">
+      <div class="n">1</div>
+      <div class="body">
+        <div class="rule">Transmit the SOS at t+5&nbsp;s with whatever fix exists</div>
+        <div class="why">Indoors the GNSS branch never returns. Waiting for fix quality is a design
+        that never fires inside a school. <code>SOS_TX_DEADLINE_MS</code></div>
+      </div>
+    </div>
+    <div class="contract">
+      <div class="n">2</div>
+      <div class="body">
+        <div class="rule">HTTP 200 is the only ack</div>
+        <div class="why">An event leaves the device's flash queue on 200 and on nothing else.
+        "The request was sent" is not delivery, and a dropped SOS is unrecoverable.</div>
+      </div>
+    </div>
+    <div class="contract">
+      <div class="n">3</div>
+      <div class="body">
+        <div class="rule">Every event carries an id; ingest is idempotent</div>
+        <div class="why">2G retries constantly. A redelivery must never become a second position on
+        the map or a second attendance record. Enforced by <code>UNIQUE(event_id)</code>.</div>
+      </div>
+    </div>
+    <div class="contract">
+      <div class="n">4</div>
+      <div class="body">
+        <div class="rule">A position is never rendered without source, accuracy and age</div>
+        <div class="why">A 12&nbsp;m GNSS fix and a 2&nbsp;km cell estimate are both "a pin" if you
+        let them be. This is the most dangerous bug available in this system.</div>
+      </div>
+    </div>
+    <div class="contract">
+      <div class="n">5</div>
+      <div class="body">
+        <div class="rule">One press is one alert</div>
+        <div class="why">The device texts the parent directly. When it reports
+        <code>device_sms_sent</code>, the server skips its own t+0 SMS. Two texts for one press
+        teaches parents to distrust the alert.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Where things live</h2></div>
+<pre class="tree"><b>esp-tracker/</b>
+├── <b>PLAN.md</b>              <i>the design and the reasoning — the source of truth</i>
+├── <b>survey/</b>              <i>Phase 0. RUN THIS FIRST.</i>
+│   ├── src/main.cpp        <u>coverage logger: cell + CSQ + Wi-Fi + GNSS, to flash</u>
+│   └── analyze.py          <u>CSV → go/no-go report; --geolocate closes gate 2</u>
+├── <b>tracker/</b>             <i>the worn device</i>
+│   ├── include/pins.h      <u>pin map. ADC1-only and RTC-GPIO traps encoded here</u>
+│   ├── include/config.h    <u>every tunable. Start here for behaviour changes</u>
+│   └── src/
+│       ├── sos.cpp         <u>the five-second rule</u>
+│       ├── feedback.cpp    <u>LED + piezo cues, non-blocking, silent on SOS</u>
+│       ├── motion.cpp      <u>cadence gate: cell tier + Wi-Fi Jaccard tier</u>
+│       ├── locator.cpp     <i>fix fusion across the four sources</i>
+│       ├── modem.cpp       <i>SIM800L: AT, HTTPS, SMS both ways</i>  <b>← biggest TODO</b>
+│       ├── gps.cpp         <i>NEO-6M NMEA</i>
+│       └── store.cpp       <i>flash queue, exponential backoff</i>
+├── <b>scanner/</b>             <i>RFID attendance at the school gate</i>
+│   └── src/reader.cpp      <u>RC522 UID read + debounce (working)</u>
+│
+├── <b>supabase/</b>            <i>PATH A — production</i>
+│   ├── migrations/0001_schema.sql   <u>the data model. Read this first</u>
+│   ├── migrations/0002_rls.sql      <b>← the entire security model</b>
+│   ├── migrations/0003_cron.sql     <u>dispatch every minute, prune nightly</u>
+│   └── functions/
+│       ├── ingest/         <u>device bearer auth; 200 IS the ack; rung 1 fires here</u>
+│       ├── dispatch/       <u>drains alert_queue; ack cancels remaining rungs</u>
+│       └── locate/         <i>parent-triggered SMS downlink, JWT + rate limited</i>
+├── <b>web/</b>                 <i>PATH A — Vercel. Static, no build step</i>
+│   ├── config.js           <i>anon key (public — but only because RLS is on)</i>
+│   └── app.js              <u>Leaflet, SOS banner, place picker, Realtime</u>
+│
+└── <b>server/</b>              <i>PATH B — FastAPI reference. Best local dev target</i>
+    ├── schema.sql          <i>SQLite twin of 0001_schema.sql</i>
+    ├── app/alerts.py       <i>the asyncio ladder (what alert_queue replaced)</i>
+    └── app/main.py         <i>all routes in one file</i></pre>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>Change recipes</h2></div>
+  <p class="prose">The common modifications, and the one thing to be careful about in each.</p>
+  <div class="recipes">
+    <div class="recipe head"><div>I want to&hellip;</div><div>Touch</div><div>Watch out for</div></div>
+
+    <div class="recipe">
+      <div class="want">Change how often it reports</div>
+      <div class="files"><span>tracker/include/config.h</span><span>CADENCE_*_MS</span></div>
+      <div class="care">Each report is a modem wake at up to 2&nbsp;A. Halving the interval roughly doubles the battery cost of routine tracking.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Make the SOS button easier or harder to press</div>
+      <div class="files"><span>config.h &rarr; SOS_HOLD_MS</span><span>SOS_CANCEL_WINDOW_MS</span></div>
+      <div class="care">Below ~1.5&nbsp;s you start getting pocket false alarms, and enough of those teach parents to ignore the alert.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Change the escalation timing or channels</div>
+      <div class="files"><span>A: functions/ingest &rarr; alert_queue insert</span><span>A: functions/dispatch</span><span>B: server/app/config.py</span></div>
+      <div class="care">Rung 1 fires inside ingest and must stay there — queued rungs inherit cron's &plusmn;60 s. Voice costs money; keep it last.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Add or loosen a data access rule</div>
+      <div class="files"><span>supabase/migrations/0002_rls.sql</span></div>
+      <div class="care"><b>The highest-risk file in the repo.</b> Every policy routes through <code>device_access</code>. A table with RLS off is world-readable via the anon key.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Change how long data is kept</div>
+      <div class="files"><span>0003_cron.sql &rarr; prune_old_data()</span></div>
+      <div class="care">Liability, not housekeeping. Wi-Fi scans go first and fastest — an AP trail is more revealing than the coordinates beside it.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Swap the SMS provider</div>
+      <div class="files"><span>functions/_shared/sms.ts</span><span>supabase secrets set SMS_PROVIDER</span></div>
+      <div class="care">Already abstracted. <code>console</code> prints instead of sending, so you can exercise the whole ladder for free.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Add a position source</div>
+      <div class="files"><span>tracker/src/locator.cpp</span><span>0001_schema.sql source CHECK</span><span>web/app.js SOURCE</span></div>
+      <div class="care">Three places, all required. A source with no entry in <code>SOURCE</code> renders with the fallback colour and no label.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Tune indoor / outdoor detection</div>
+      <div class="files"><span>config.h MOTION_*</span><span>tracker/src/motion.cpp</span></div>
+      <div class="care">Raising the Jaccard threshold makes it call "moving" more readily, which costs battery. <code>blind()</code> must keep its fixed fallback.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Change what the child feels or hears</div>
+      <div class="files"><span>tracker/src/feedback.cpp</span><span>config.h FEEDBACK_*</span></div>
+      <div class="care">Patterns must be non-blocking &mdash; <code>sos::trigger()</code> is racing a 5&nbsp;s deadline. And read <code>FEEDBACK_SILENT_SOS</code> before enabling audio on SOS cues.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Fit the vibration motor when it arrives</div>
+      <div class="files"><span>config.h FEEDBACK_USE_MOTOR</span><span>PIN_FEEDBACK (13)</span></div>
+      <div class="care">Wiring change only — MOSFET + flyback diode, never straight off the pin. Set <code>FEEDBACK_ACK_HOLD_MS</code> back to 0 for a one-shot.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Add a dashboard panel</div>
+      <div class="files"><span>web/index.html</span><span>web/app.js</span></div>
+      <div class="care">On path A you usually need no backend change at all &mdash; query Postgres directly and let RLS filter it. That is the point of the policies.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Deploy</div>
+      <div class="files"><span>supabase db push</span><span>supabase functions deploy</span><span>cd web &amp;&amp; vercel --prod</span></div>
+      <div class="care"><code>ingest</code> and <code>dispatch</code> need <code>--no-verify-jwt</code>: devices are not Auth users and cron calls with the service role.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Tighten escalation below 60 s</div>
+      <div class="files"><span>0003_cron.sql</span><span>functions/dispatch</span></div>
+      <div class="care">Replace the cron job with delayed callbacks (QStash schedules to the second) and keep the same <code>alert_queue</code> table.</div>
+    </div>
+    <div class="recipe">
+      <div class="want">Add an SMS command from the dashboard</div>
+      <div class="files"><span>functions/_shared/sms.ts</span><span>functions/locate</span><span>tracker/src/modem.cpp</span></div>
+      <div class="care">Authenticate it with <code>SMS_CMD_SECRET</code> and rate-limit it. The device number is a remote-control interface for anyone who learns it.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>Pin maps</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Tracker signal</th><th>GPIO</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>SIM800L TX &rarr; ESP32 RX</td><td class="num">16</td><td>UART2</td></tr>
+        <tr><td>ESP32 TX &rarr; SIM800L RX</td><td class="num">17</td><td><b>Level-shift this line</b> — SIM800L RX is not 3.3 V tolerant</td></tr>
+        <tr><td>SIM800L PWRKEY</td><td class="num">23</td><td>Pulse low ~1 s to toggle</td></tr>
+        <tr><td>SIM800L DTR</td><td class="num">19</td><td>Held low to wake from <code>AT+CSCLK=1</code></td></tr>
+        <tr><td>SIM800L power gate</td><td class="num">32</td><td>High-side MOSFET</td></tr>
+        <tr><td>NEO-6M TX / RX</td><td class="num">25 / 26</td><td>UART1, remapped off the flash pins</td></tr>
+        <tr><td>NEO-6M power gate</td><td class="num">27</td><td>V_BCKP stays powered, or every fix is a 27 s cold start</td></tr>
+        <tr><td>SOS button</td><td class="num">33</td><td><b>RTC-capable</b> — required for deep-sleep wake. Active low</td></tr>
+        <tr><td>Feedback LED / motor</td><td class="num">13</td><td>LED now, motor later — same pin</td></tr>
+        <tr><td>Piezo</td><td class="num">12</td><td>Silent on SOS cues by default</td></tr>
+        <tr><td>Battery sense</td><td class="num">34</td><td><b>ADC1 only</b> — ADC2 cannot be read while Wi-Fi is active</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Scanner signal</th><th>GPIO</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>RC522 SS / SCK / MOSI / MISO</td><td class="num">5 / 18 / 23 / 19</td><td>SPI. <b>3.3 V only</b> — 5 V destroys the module</td></tr>
+        <tr><td>RC522 RST</td><td class="num">4</td><td>Moved off 22 so I²C keeps the standard pair</td></tr>
+        <tr><td>DS3231 / OLED</td><td class="num">21 / 22</td><td>I²C. The RTC is not optional — see below</td></tr>
+        <tr><td>Buzzer / LED ok / LED err</td><td class="num">25 / 26 / 27</td><td>The child must know the tap took</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>Tuning knobs</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Setting</th><th>Default</th><th>Affects</th></tr></thead>
+      <tbody>
+        <tr><td><code>SOS_TX_DEADLINE_MS</code></td><td class="num">5000</td><td><b>Contract 1.</b> Raising it means the SOS waits for a fix that, indoors, never comes</td></tr>
+        <tr><td><code>SOS_HOLD_MS</code></td><td class="num">2000</td><td>False-alarm rate vs. how fast a frightened child can trigger it</td></tr>
+        <tr><td><code>SOS_MAX_PER_HOUR</code></td><td class="num">5</td><td>Stuck-button protection. Suppressed events still raise an operator alert</td></tr>
+        <tr><td><code>CADENCE_MOVING_MS</code></td><td class="num">120000</td><td>Battery, directly. Every report is a 2 A modem wake</td></tr>
+        <tr><td><code>MOTION_SIMILAR_THRESHOLD</code></td><td class="num">0.55</td><td>Jaccard on the BSSID set. Higher = calls "moving" more often = more battery</td></tr>
+        <tr><td><code>FEEDBACK_SILENT_SOS</code></td><td class="num">true</td><td><b>Safety.</b> A beeping device announces a child who just called for help</td></tr>
+        <tr><td><code>FEEDBACK_ACK_HOLD_MS</code></td><td class="num">20000</td><td>Set to 0 when the motor is fitted — haptics land instantly, LEDs must be looked at</td></tr>
+        <tr><td><code>BATCH_MAX_EVENTS</code></td><td class="num">60</td><td>How far the 3–8 s TLS handshake is amortised</td></tr>
+        <tr><td><code>ESCALATION</code> <i>(server)</i></td><td>0/0/60/180/300 s</td><td>The alert ladder. Voice rungs cost money — keep them last</td></tr>
+        <tr><td><code>STALE_AFTER_S</code> <i>(server)</i></td><td class="num">900</td><td>When a pin desaturates and stops claiming to be current</td></tr>
+        <tr><td><code>RETAIN_SCANS_S</code> <i>(server)</i></td><td>7 days</td><td>Wi-Fi scan history. An AP trail is more revealing than the coordinates</td></tr>
+        <tr><td><code>dispatch-alerts</code> cron</td><td><code>* * * * *</code></td><td>Escalation granularity, and ~43K function calls/month — more than your ingest traffic</td></tr>
+        <tr><td><code>prune_old_data()</code></td><td>7 / 90 / 30 days</td><td>Wi-Fi scans / locations / health. SOS events are kept forever, on purpose</td></tr>
+        <tr><td><code>RATE_LIMIT_S</code> <i>(locate)</i></td><td class="num">60</td><td>Stops repeated "locate now" taps flattening the battery</td></tr>
+        <tr><td><code>COOKIE_SECURE</code> <i>(path B only)</i></td><td class="num">1</td><td>Set 0 for local HTTP dev <b>only</b>. Never on anything reachable</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>What is provisional</h2></div>
+  <p class="prose">Four parts are stand-ins for something else. Each is a deliberate trade, and
+  each is worth revisiting when stock allows.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Wanted</th><th>Fitted</th><th>What it cost</th></tr></thead>
+      <tbody>
+        <tr><td>SIM7080G (LTE-M)</td><td>SIM800L (2G)</td><td>No modem TLS, battery 5 days &rarr; 2–3. <b>Bought</b> SMS as an unkillable channel. Correct part for PH regardless</td></tr>
+        <tr><td>LIS3DH accelerometer</td><td>Wi-Fi + cell motion gate</td><td>~0.5% battery and no interrupt wake. Arguably a <em>better</em> signal — jostling isn't movement</td></tr>
+        <tr><td>Vibration motor</td><td>LED + piezo</td><td><b>The one substitution that is purely worse.</b> Haptics are the only channel both silent and felt</td></tr>
+        <tr><td>Google FMDN fallback</td><td>nothing</td><td>A tracker that is off or out of coverage is simply gone. Deliberate — see the companion page</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warnbox">
+    <div class="tag2">Before touching the feedback code</div>
+    <p><b>SOS cues are silent on purpose.</b> A piezo is a better stand-in than an LED for most
+    things, because sound reaches a child who is not looking. But an SOS is the one case where
+    being heard can be the danger: a child presses the button precisely when someone is
+    frightening them, and a device that then beeps announces both the child and the fact that
+    they called for help.</p>
+    <p>So the piezo carries boot, low battery, drill mode and "locate now"; the SOS cues stay
+    visual. If you set <code>FEEDBACK_SILENT_SOS = false</code>, understand that is the trade you
+    are making.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>Next, in order</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>Do</th><th>Until</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>Wire the survey rig, walk the school run on Globe, then Smart</td><td>Registered ≥ 98%, CSQ median ≥ 15</td></tr>
+        <tr><td class="num">2</td><td><code>analyze.py --geolocate</code> on the same log</td><td>Provider resolves ≤ 50 m <b>inside the school</b></td></tr>
+        <tr><td class="num">3</td><td>Fill in <code>tracker/src/modem.cpp</code></td><td>AT attach, HTTPS POST, SMS both ways, <code>AT+CCLK?</code></td></tr>
+        <tr><td class="num">4</td><td>Run the migrations, <b>verify RLS is on every table</b>, deploy the functions</td><td>Table Editor shows "RLS enabled" 14&times;</td></tr>
+        <tr><td class="num">5</td><td>SOS end to end, 50 real presses</td><td>p95 ≤ 20 s; 20 indoor presses give a usable fix</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose">Steps 1 and 2 are a weekend with parts you already have, and they decide whether
+  the rest of the project is buildable. Everything after them assumes the answer was yes.</p>
+</section>
+
+<footer>
+  Companion to PLAN.md and the architecture page &middot; v4. Migrations validated with
+  libpg_query; the FastAPI reference and analyze.py are tested. Firmware and Edge Functions are
+  written but not yet run &mdash; expect to fix a header, an import or a library version on first
+  build. Firmware here is uncompiled — expect to fix a header or a library-version mismatch on the first
+  <code>pio run</code>. The server and <code>analyze.py</code> are tested. Do not expose the
+  server until <code>/ws/live</code> authenticates its socket.
+</footer>
+
+</div>

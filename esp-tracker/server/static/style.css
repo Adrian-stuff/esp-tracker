@@ -1,0 +1,378 @@
+:root{
+  --bg:#eef1f5; --surface:#fff; --line:#cfd8e2;
+  --ink:#141a21; --ink-2:#4c5866; --ink-3:#6d7b8b;
+  --accent:#0b6e68; --sos:#b93630; --ok:#2c6e4e; --warn:#8a6212;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e1318; --surface:#161d25; --line:#2b3641;
+    --ink:#e5ebf2; --ink-2:#a7b3c1; --ink-3:#818e9c;
+    --accent:#46c3b3; --sos:#f0776f; --ok:#63c48f; --warn:#d9a441;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.5 system-ui,-apple-system,sans-serif;
+  display:flex; flex-direction:column;
+}
+header{
+  display:flex; align-items:center; gap:14px;
+  padding:12px 18px; border-bottom:1px solid var(--line); background:var(--surface);
+}
+h1{font-size:16px; margin:0; letter-spacing:-.01em}
+h2{font-size:11px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-3)}
+.chip{
+  margin-left:auto; font-family:var(--mono); font-size:11px;
+  padding:3px 9px; border-radius:3px; background:var(--bg); color:var(--ink-3);
+}
+.chip.live{color:var(--ok)}
+.chip.down{color:var(--sos)}
+
+main{flex:1; display:flex; min-height:0}
+#sidebar{
+  width:320px; flex:none; overflow-y:auto; padding:14px;
+  border-right:1px solid var(--line); background:var(--surface);
+  display:flex; flex-direction:column; gap:16px;
+}
+#map-wrap{flex:1; min-height:0; position:relative}
+#map{position:absolute; inset:0}
+
+.dev{
+  border:1px solid var(--line); border-radius:4px; padding:12px;
+  background:var(--bg); display:flex; flex-direction:column; gap:8px; margin-bottom:10px;
+}
+.dev .top{display:flex; align-items:baseline; gap:8px}
+.dev .name{font-weight:600}
+.dev .place{font-size:13px; color:var(--accent); font-weight:600}
+.dev .meta{font-family:var(--mono); font-size:11px; color:var(--ink-3); display:flex; flex-wrap:wrap; gap:10px}
+.dev .meta b{color:var(--ink-2); font-weight:600}
+.dev.stale{opacity:.62}
+.dev .age{font-family:var(--mono); font-size:11px; margin-left:auto; color:var(--ink-3)}
+.dev.stale .age{color:var(--warn)}
+.dev button{
+  font:inherit; font-size:12px; padding:6px 10px; cursor:pointer;
+  border:1px solid var(--accent); background:transparent; color:var(--accent); border-radius:3px;
+}
+.dev button:disabled{opacity:.5; cursor:default}
+.warn{color:var(--warn); font-size:12px}
+.muted{color:var(--ink-3); font-size:13px}
+.panel{border-top:1px solid var(--line); padding-top:14px}
+#attendance{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px}
+#attendance li{font-size:13px; display:flex; gap:8px}
+#attendance time{font-family:var(--mono); font-size:11px; color:var(--ink-3); margin-left:auto}
+
+#sos-banner{background:var(--sos); color:#fff; animation:pulse 1.2s ease-in-out infinite}
+.sos-inner{display:flex; align-items:center; gap:16px; padding:14px 18px; max-width:1100px; margin:0 auto}
+.sos-text{display:flex; flex-direction:column}
+.sos-text strong{font-size:17px; letter-spacing:.02em}
+.sos-text span{font-size:13px; opacity:.92}
+#sos-ack{
+  margin-left:auto; font:inherit; font-weight:600; padding:10px 18px; cursor:pointer;
+  border:0; border-radius:4px; background:#fff; color:var(--sos);
+}
+@keyframes pulse{50%{filter:brightness(1.15)}}
+@media (prefers-reduced-motion:reduce){#sos-banner{animation:none}}
+
+.leaflet-popup-content{font:13px/1.5 system-ui,sans-serif}
+.leaflet-popup-content .src{font-family:var(--mono); font-size:11px; color:#555}
+
+@media (max-width:760px){
+  main{flex-direction:column}
+  #sidebar{width:auto; max-height:44vh; border-right:0; border-bottom:1px solid var(--line)}
+}
+
+/* --- places / wifi picker --- */
+#place-add{margin-top:10px}
+#place-add summary{
+  cursor:pointer; font-size:13px; color:var(--accent); font-weight:600;
+  padding:6px 0; list-style:none;
+}
+#place-add summary::-webkit-details-marker{display:none}
+#place-add summary::before{content:"+ "; font-weight:700}
+#place-add[open] summary::before{content:"\2212 "}
+.hint{font-size:12px; color:var(--ink-3); margin:4px 0 10px; line-height:1.45}
+.ap-list{
+  display:flex; flex-direction:column; gap:1px;
+  max-height:270px; overflow-y:auto;
+  border:1px solid var(--line); border-radius:4px; padding:6px; background:var(--bg);
+}
+/* --- network picker ---------------------------------------------------- */
+/* "Visible now" and "seen before" answer different questions, so they get
+   different weight. A network three metres away must not look like one the
+   tracker last saw on Tuesday. */
+.ap-head{
+  display:flex; align-items:center; gap:7px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--ink-3); padding:9px 6px 5px;
+}
+.ap-head:first-child{padding-top:2px}
+.ap-head em{margin-left:auto; font-style:normal; text-transform:none; letter-spacing:0; opacity:.8}
+.ap-head.live{color:var(--ok)}
+.ap-head .dot{
+  width:7px; height:7px; border-radius:50%; background:var(--ok); flex:none;
+  animation:sigpulse 2s ease-in-out infinite;
+}
+.ap-head .dot.off{background:var(--ink-3); animation:none}
+@keyframes sigpulse{50%{opacity:.35}}
+
+.ap{
+  display:flex; align-items:center; gap:8px; padding:6px; border-radius:3px;
+  font-size:13px; cursor:pointer;
+}
+.ap:hover{background:var(--surface)}
+.ap input{flex:none; margin:0}
+.ap .ssid{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto}
+.ap .ssid.unnamed{color:var(--ink-3); font-style:italic}
+
+/* Currently visible sits at full strength; history recedes. */
+.ap.live .ssid{color:var(--ink); font-weight:500}
+.ap.past{opacity:.62}
+.ap.past:hover{opacity:1}
+
+.ap .apmeta{
+  margin-left:auto; display:flex; align-items:center; gap:7px; flex:none;
+  font-family:var(--mono); font-size:10px; color:var(--ink-3);
+}
+.ap .taken{color:var(--accent); font-weight:600}
+.ap .sig{color:var(--ok)}
+.ap .count{opacity:.75}
+
+/* Signal as a shape, not a word — it is what tells a parent "you are inside
+   the building", and it should be readable at a glance down the column. */
+.sigbars{display:flex; align-items:flex-end; gap:1.5px; flex:none; height:12px; width:16px}
+.sigbars i{width:3px; background:var(--line); border-radius:1px}
+.sigbars i:nth-child(1){height:4px}
+.sigbars i:nth-child(2){height:7px}
+.sigbars i:nth-child(3){height:10px}
+.sigbars i:nth-child(4){height:12px}
+.sigbars i.on{background:var(--ok)}
+.sigbars.dim i.on{background:var(--ink-3)}
+.place-form{display:flex; gap:6px; margin-top:10px; flex-wrap:wrap}
+.place-form input{flex:1 1 120px; min-width:0}
+.place-form input,.place-form select,.place-form button{
+  font:inherit; font-size:13px; padding:7px 9px;
+  border:1px solid var(--line); border-radius:3px;
+  background:var(--surface); color:var(--ink);
+}
+.place-form button{border-color:var(--accent); color:var(--accent); cursor:pointer; font-weight:600}
+.place-form button:disabled{opacity:.5; cursor:default}
+.place-row{
+  display:flex; align-items:center; gap:8px; font-size:13px;
+  padding:7px 9px; border:1px solid var(--line); border-radius:4px;
+  background:var(--bg); margin-bottom:6px;
+}
+.place-row .pname{font-weight:600}
+.place-row .pmeta{font-family:var(--mono); font-size:11px; color:var(--ink-3)}
+.place-row button{
+  margin-left:auto; font:inherit; font-size:11px; padding:3px 8px; cursor:pointer;
+  border:1px solid var(--line); border-radius:3px; background:transparent; color:var(--ink-3);
+}
+.place-row button:hover{color:var(--sos); border-color:var(--sos)}
+
+/* --- sign in --- */
+#signin{
+  /* Above Leaflet: its panes run to 400 and its control corners sit at 1000,
+     so anything at or below that renders *under* an initialised map. */
+  position:fixed; inset:0; z-index:2000; background:var(--bg);
+  align-items:center; justify-content:center; padding:24px;
+}
+/* display lives on :not([hidden]), NOT on #signin itself.
+   The hidden attribute works through the UA rule [hidden]{display:none}, and an
+   ID selector outranks it — so `el.hidden = true` set the property while the
+   overlay stayed on screen, covering a dashboard that had loaded correctly.
+   Sign-in appeared to "do nothing" even though every request returned 200. */
+#signin:not([hidden]){ display:flex; }
+#signin-form{
+  display:flex; flex-direction:column; gap:12px; width:100%; max-width:320px;
+  background:var(--surface); border:1px solid var(--line); padding:28px; border-radius:6px;
+}
+#signin-form h2{margin:0 0 6px; font-size:19px; text-transform:none; letter-spacing:-.01em; color:var(--ink)}
+#signin-form input{
+  font:inherit; padding:10px 12px; border:1px solid var(--line); border-radius:4px;
+  background:var(--bg); color:var(--ink);
+}
+#signin-form button{
+  font:inherit; font-weight:600; padding:11px; cursor:pointer; border:0; border-radius:4px;
+  background:var(--accent); color:#fff;
+}
+.err{color:var(--sos); font-size:13px; margin:0; min-height:1em}
+.linkish{background:none; border:0; color:var(--ink-3); font:inherit; font-size:12px; cursor:pointer; padding:4px 6px}
+.linkish:hover{color:var(--sos)}
+
+/* ==========================================================================
+   MAP
+   The basemap is deliberately quiet. Everything below is a judgement about a
+   child's position, and it has to out-read the streets underneath it.
+   ========================================================================== */
+
+/* --- the child --- */
+.kid{position:relative; width:0; height:0}
+.kid .halo{
+  position:absolute; left:50%; top:50%; width:46px; height:46px; margin:-23px 0 0 -23px;
+  border-radius:50%; background:var(--c); opacity:.22;
+  animation:kidpulse 2.4s ease-out infinite;
+}
+.kid .ring{
+  position:absolute; left:50%; top:50%; width:30px; height:30px; margin:-15px 0 0 -15px;
+  border-radius:50%; border:2px solid var(--c); background:transparent; opacity:.55;
+}
+.kid .dot{
+  position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px;
+  border-radius:50%; background:var(--c); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  font:600 12px/1 system-ui,sans-serif; letter-spacing:.02em;
+  box-shadow:0 0 0 3px var(--surface), 0 2px 10px rgba(0,0,0,.45);
+}
+@keyframes kidpulse{
+  0%{transform:scale(.55); opacity:.42}
+  70%{transform:scale(1.5); opacity:0}
+  100%{transform:scale(1.5); opacity:0}
+}
+/* Stale stops moving. A pulsing marker reads as "live", and a position that is
+   an hour old must never claim that. */
+.kid.stale .halo{animation:none; opacity:0}
+.kid.stale .dot{background:var(--ink-3); box-shadow:0 0 0 3px var(--surface)}
+.kid.stale .ring{border-style:dashed; border-color:var(--ink-3); opacity:.5}
+
+/* --- places --- */
+.place-label{
+  display:flex; align-items:center; gap:6px; white-space:nowrap;
+  transform:translate(-50%,-50%);
+  padding:4px 10px; border-radius:14px;
+  background:var(--surface); border:1px solid var(--line);
+  font:600 11.5px/1 system-ui,sans-serif; color:var(--ink);
+  box-shadow:0 2px 8px rgba(0,0,0,.28);
+}
+.place-label .g{font-size:13px}
+
+/* --- freshness card --- */
+#freshness{
+  position:absolute; top:12px; right:12px; z-index:500;
+  display:flex; align-items:center; gap:10px;
+  padding:9px 13px; border-radius:6px;
+  background:var(--surface); border:1px solid var(--line);
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+}
+#freshness .pip{
+  width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none;
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 25%, transparent);
+}
+#freshness.stale .pip{background:var(--warn); box-shadow:0 0 0 4px color-mix(in srgb, var(--warn) 25%, transparent)}
+#freshness.dead .pip{background:var(--sos); box-shadow:0 0 0 4px color-mix(in srgb, var(--sos) 25%, transparent)}
+.fresh-text{display:flex; flex-direction:column; gap:2px; line-height:1.2}
+.fresh-text strong{font-size:13px; color:var(--ink)}
+.fresh-text span{font-family:var(--mono); font-size:10.5px; color:var(--ink-3)}
+
+/* --- legend --- */
+#map-legend{
+  position:absolute; left:12px; bottom:22px; z-index:500;
+  display:flex; flex-wrap:wrap; gap:10px;
+  padding:7px 11px; border-radius:6px;
+  background:var(--surface); border:1px solid var(--line);
+  font-family:var(--mono); font-size:10.5px; color:var(--ink-2);
+  box-shadow:0 2px 10px rgba(0,0,0,.25);
+}
+#map-legend span{display:flex; align-items:center; gap:5px}
+#map-legend .k{width:9px; height:9px; border-radius:50%; display:inline-block}
+#map-legend .k.gnss{background:#12b886}
+#map-legend .k.wifi{background:#3b8fd6}
+#map-legend .k.ble_anchor{background:#9b7cd4}
+#map-legend .k.cell{background:#d9a441}
+
+.leaflet-container{background:var(--surface-2)}
+
+/* The basemap is scenery, not content. Desaturating it lets the source colours
+   and the child marker carry the meaning; in dark mode an inversion turns the
+   same free OSM tiles into a dark basemap with no second provider and no API
+   key. Scoped to the tile pane, so markers and overlays keep true colour. */
+.leaflet-tile-pane{filter:saturate(.45) brightness(1.03) contrast(.96)}
+@media (prefers-color-scheme:dark){
+  .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) saturate(.35) brightness(.92) contrast(.92)}
+}
+.leaflet-control-attribution{font-size:10px; opacity:.75}
+@media (max-width:760px){
+  #freshness{top:8px; right:8px; padding:7px 10px}
+  #map-legend{left:8px; bottom:18px}
+}
+
+/* ==========================================================================
+   TRAIL SCRUBBER
+   ========================================================================== */
+#scrub{
+  position:absolute; left:12px; right:12px; bottom:58px; z-index:500;
+  max-width:520px; margin:0 auto;
+  padding:11px 14px 9px; border-radius:8px;
+  background:var(--surface); border:1px solid var(--line);
+  box-shadow:0 6px 22px rgba(0,0,0,.35);
+  display:flex; flex-direction:column; gap:8px;
+}
+.scrub-head{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.scrub-head strong{font-family:var(--mono); font-size:12px; color:var(--ink); letter-spacing:.02em}
+.scrub-presets{margin-left:auto; display:flex; gap:4px}
+.scrub-presets button{
+  font:inherit; font-size:11px; padding:3px 9px; cursor:pointer;
+  border:1px solid var(--line); border-radius:11px;
+  background:transparent; color:var(--ink-3);
+}
+.scrub-presets button:hover{color:var(--ink); border-color:var(--ink-3)}
+.scrub-presets button.on{background:var(--accent); border-color:var(--accent); color:#fff}
+
+/* Two range inputs stacked into one track: the browser gives us accessible,
+   keyboard-driven handles for free, which a hand-rolled slider would not. */
+.scrub-track{position:relative; height:22px}
+.scrub-track input{
+  position:absolute; inset:0; width:100%; margin:0; height:22px;
+  -webkit-appearance:none; appearance:none; background:transparent; pointer-events:none;
+}
+.scrub-track::before{
+  content:""; position:absolute; left:0; right:0; top:9px; height:4px;
+  border-radius:2px; background:var(--line);
+}
+.scrub-track input::-webkit-slider-thumb{
+  -webkit-appearance:none; pointer-events:auto; cursor:grab;
+  width:15px; height:15px; border-radius:50%;
+  background:var(--accent); border:2px solid var(--surface);
+  box-shadow:0 1px 5px rgba(0,0,0,.45);
+}
+.scrub-track input::-moz-range-thumb{
+  pointer-events:auto; cursor:grab;
+  width:15px; height:15px; border-radius:50%;
+  background:var(--accent); border:2px solid var(--surface);
+}
+.scrub-foot{font-family:var(--mono); font-size:10px; color:var(--ink-3)}
+
+/* ==========================================================================
+   TOASTS — a tap at the gate should announce itself
+   ========================================================================== */
+#toasts{
+  position:fixed; top:60px; right:16px; z-index:1500;
+  display:flex; flex-direction:column; gap:8px; pointer-events:none;
+}
+.toast{
+  display:flex; align-items:center; gap:10px;
+  padding:11px 15px; border-radius:7px; min-width:240px;
+  background:var(--surface); border:1px solid var(--accent);
+  box-shadow:0 8px 26px rgba(0,0,0,.4);
+  animation:toastin .28s ease-out;
+}
+.toast .g{font-size:17px; flex:none}
+.toast .t{display:flex; flex-direction:column; gap:2px; line-height:1.25}
+.toast .t strong{font-size:13.5px; color:var(--ink)}
+.toast .t span{font-family:var(--mono); font-size:10.5px; color:var(--ink-3)}
+.toast.out{border-color:var(--warn)}
+@keyframes toastin{from{opacity:0; transform:translateX(14px)}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none}}
+
+/* A row that just arrived should be findable without hunting. */
+#attendance li.fresh{
+  animation:tapflash 2.6s ease-out;
+  border-radius:3px;
+}
+@keyframes tapflash{
+  0%,20%{background:color-mix(in srgb, var(--accent) 26%, transparent)}
+  100%{background:transparent}
+}
+@media (max-width:760px){ #scrub{bottom:52px; left:8px; right:8px} }

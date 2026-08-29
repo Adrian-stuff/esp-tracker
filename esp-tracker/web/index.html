@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+<link rel="manifest" href="/manifest.json">
+</head>
+<body>
+
+<!-- SOS takes over the whole screen. A parent should understand the situation
+     from across the room, without reading. -->
+<div id="sos-banner" hidden>
+  <div class="sos-inner">
+    <div class="sos-text">
+      <strong id="sos-title">SOS</strong>
+      <span id="sos-detail"></span>
+    </div>
+    <button id="sos-ack">I've seen this</button>
+  </div>
+</div>
+
+<div id="signin" hidden>
+  <form id="signin-form">
+    <h2>Tracker</h2>
+    <input id="email" type="email" placeholder="you@example.com" autocomplete="username" required>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <p id="signin-error" class="err"></p>
+  </form>
+</div>
+
+<header>
+  <h1>Tracker</h1>
+  <div id="conn" class="chip">connecting…</div>
+  <button id="signout" class="linkish">Sign out</button>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <div id="devices"></div>
+    <section class="panel">
+      <h2>Places</h2>
+      <div id="places"></div>
+      <details id="place-add">
+        <summary>Name a place from what the tracker sees</summary>
+        <p class="hint">Tick the networks that are always there. Naming them means
+        the map says &ldquo;At school&rdquo; instead of drawing a circle &mdash; and these
+        networks stop being sent to the geolocation provider.</p>
+        <div id="ap-list" class="ap-list"></div>
+        <div class="place-form">
+          <input id="place-name" type="text" placeholder="School" maxlength="40">
+          <select id="place-kind">
+            <option value="school">School</option>
+            <option value="home">Home</option>
+            <option value="other">Other</option>
+          </select>
+          <button id="place-save">Save place</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>At school</h2>
+      <ul id="attendance"><li class="muted">No taps yet</li></ul>
+    </section>
+  </aside>
+  <div id="map"></div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="/config.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

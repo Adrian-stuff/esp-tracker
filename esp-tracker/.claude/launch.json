@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tracker-dashboard",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": [
+        "-c",
+        "cd \"$(dirname \"$0\")\"; export DB_PATH=./tracker.db SMS_PROVIDER=console COOKIE_SECURE=0 ROSTER_SALT=change-me-too; exec .venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+        "/Users/adriandevera/projects/possible-client/esp-tracker/server/x"
+      ],
+      "cwd": "server",
+      "port": 8000,
+      "autoPort": false
+    }
+  ]
+}

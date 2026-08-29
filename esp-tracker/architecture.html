@@ -1,0 +1,769 @@
+<title>Four Fixes, One Uplink</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --ground:#EDF0F4; --surface:#FFFFFF; --surface-2:#F5F7FA; --surface-3:#E7ECF2;
+  --ink:#141A21; --ink-2:#4C5866; --ink-3:#6D7B8B;
+  --line:#CFD8E2; --line-2:#E2E8F0;
+  --accent:#0B6E68; --accent-soft:#DFEFEC;
+  --sos:#B93630; --sos-soft:#FAE8E6;
+  --fallback:#69768A; --fallback-soft:#E8EBF0;
+  --ok:#2C6E4E; --warn:#8A6212;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+    --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+    --line:#2B3641; --line-2:#222C36;
+    --accent:#46C3B3; --accent-soft:#10322F;
+    --sos:#F0776F; --sos-soft:#3A1D1B;
+    --fallback:#93A0B1; --fallback-soft:#232C37;
+    --ok:#63C48F; --warn:#D9A441;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+  --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+  --line:#2B3641; --line-2:#222C36;
+  --accent:#46C3B3; --accent-soft:#10322F;
+  --sos:#F0776F; --sos-soft:#3A1D1B;
+  --fallback:#93A0B1; --fallback-soft:#232C37;
+  --ok:#63C48F; --warn:#D9A441;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--serif); font-size:16.5px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:0 28px 96px}
+.prose{max-width:68ch}
+
+header.masthead{
+  border-bottom:1px solid var(--line);
+  padding:64px 0 34px; margin-bottom:44px;
+  display:flex; flex-direction:column; gap:20px;
+}
+.eyebrow{
+  font-family:var(--mono); font-size:11.5px; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--accent);
+  display:flex; flex-wrap:wrap; gap:14px; align-items:center;
+}
+.eyebrow .sep{width:5px;height:5px;border-radius:50%;background:var(--line);flex:none}
+h1{
+  font-family:var(--sans); font-weight:700; font-size:clamp(34px,5.2vw,54px);
+  line-height:1.04; letter-spacing:-.028em; margin:0; text-wrap:balance;
+}
+.standfirst{font-size:19px; line-height:1.55; color:var(--ink-2); max-width:60ch; margin:0}
+.standfirst em{font-style:italic; color:var(--ink)}
+
+h2{font-family:var(--sans); font-weight:600; font-size:25px; letter-spacing:-.018em; margin:0; text-wrap:balance}
+section{margin-top:64px; display:flex; flex-direction:column; gap:22px}
+p{margin:0}
+.sec-head{display:flex; flex-direction:column; gap:9px}
+.sec-num{font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.14em; color:var(--ink-3); text-transform:uppercase}
+
+.constraint{
+  background:var(--surface); border:1px solid var(--line);
+  border-left:3px solid var(--sos); padding:26px 30px;
+  display:flex; flex-direction:column; gap:12px;
+}
+.constraint .tag{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:var(--sos)}
+.constraint p{font-size:17px; max-width:64ch}
+
+.revnote{
+  background:var(--surface-2); border:1px solid var(--line-2);
+  border-left:3px solid var(--fallback); padding:20px 24px;
+  display:flex; flex-direction:column; gap:10px;
+}
+.revnote .tag{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:var(--fallback)}
+.revnote p{font-size:15px; color:var(--ink-2); max-width:66ch}
+.revnote ol{margin:0; padding-left:20px; font-size:15px; color:var(--ink-2); max-width:66ch}
+.revnote li{margin-bottom:7px; line-height:1.55}
+.revnote li:last-child{margin-bottom:0}
+.revnote b{color:var(--ink)}
+
+.legend{display:flex; flex-wrap:wrap; gap:12px; background:var(--surface-2); border:1px solid var(--line-2); padding:16px 18px}
+.legend .item{display:flex; align-items:center; gap:10px; flex:1 1 240px; font-family:var(--mono); font-size:11.5px; color:var(--ink-2); line-height:1.35}
+.legend svg{flex:none}
+
+figure{margin:0; display:flex; flex-direction:column; gap:14px}
+.canvas{background:var(--surface); border:1px solid var(--line); padding:22px; overflow-x:auto}
+.canvas svg{display:block; height:auto; max-width:100%}
+figcaption{font-family:var(--mono); font-size:12px; line-height:1.55; color:var(--ink-3); max-width:78ch}
+figcaption b{color:var(--ink-2); font-weight:600}
+
+.n-box{fill:var(--surface-2); stroke:var(--line); stroke-width:1.25}
+.n-box-dev{fill:var(--surface-3); stroke:var(--line); stroke-width:1.25}
+.n-box-live{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1.25}
+.n-box-sos{fill:var(--sos-soft); stroke:var(--sos); stroke-width:1.25}
+.n-box-off{fill:none; stroke:var(--line); stroke-width:1.25; stroke-dasharray:4 4}
+.t-title{fill:var(--ink); font-family:var(--sans); font-size:13px; font-weight:600}
+.t-sm{fill:var(--ink-2); font-family:var(--mono); font-size:10.5px}
+.t-xs{fill:var(--ink-3); font-family:var(--mono); font-size:10px}
+.t-lab{fill:var(--ink-2); font-family:var(--mono); font-size:10.5px}
+.t-live{fill:var(--accent); font-family:var(--mono); font-size:10.5px; font-weight:500}
+.t-sos{fill:var(--sos); font-family:var(--mono); font-size:10.5px; font-weight:600}
+.t-fall{fill:var(--fallback); font-family:var(--mono); font-size:10.5px}
+.t-idx{fill:var(--accent); font-family:var(--mono); font-size:10.5px; font-weight:600}
+.e-live{stroke:var(--accent); stroke-width:2; fill:none}
+.e-fall{stroke:var(--fallback); stroke-width:1.5; fill:none; stroke-dasharray:6 4}
+.e-sos{stroke:var(--sos); stroke-width:2; fill:none}
+.e-ink{stroke:var(--ink-2); stroke-width:1.5; fill:none}
+.e-thin{stroke:var(--line); stroke-width:1; fill:none}
+.m-live{fill:var(--accent)}
+.m-fall{fill:var(--fallback)}
+.m-sos{fill:var(--sos)}
+.m-ink{fill:var(--ink-2)}
+
+.tablewrap{overflow-x:auto; border:1px solid var(--line); background:var(--surface)}
+table{border-collapse:collapse; width:100%; min-width:640px; font-family:var(--sans); font-size:13.5px}
+th{text-align:left; font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.1em;
+   text-transform:uppercase; color:var(--ink-3); padding:13px 16px;
+   border-bottom:1px solid var(--line); background:var(--surface-2); white-space:nowrap}
+td{padding:13px 16px; border-bottom:1px solid var(--line-2); color:var(--ink-2); vertical-align:top; line-height:1.5}
+td:first-child{color:var(--ink); font-weight:500}
+tr:last-child td{border-bottom:none}
+td .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.dash{color:var(--ink-3)}
+.pill{display:inline-block; font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.05em; padding:2px 8px; border-radius:2px; white-space:nowrap}
+.pill.good{background:var(--accent-soft); color:var(--accent)}
+.pill.mid{background:var(--fallback-soft); color:var(--fallback)}
+.pill.bad{background:var(--sos-soft); color:var(--sos)}
+
+.phases{display:flex; flex-direction:column; border:1px solid var(--line); background:var(--surface)}
+.phase{display:grid; grid-template-columns:56px 1fr 1fr; gap:20px; padding:18px 20px; border-bottom:1px solid var(--line-2); align-items:start}
+.phase:last-child{border-bottom:none}
+.phase .idx{font-family:var(--mono); font-size:12px; font-weight:600; color:var(--accent); font-variant-numeric:tabular-nums; padding-top:2px}
+.phase .what{font-family:var(--sans); font-size:14px; font-weight:500; color:var(--ink); line-height:1.45}
+.phase .gate{font-family:var(--mono); font-size:11.5px; color:var(--ink-3); line-height:1.5}
+.phase .gate span{color:var(--ink-2)}
+.phase.hot{background:var(--sos-soft)}
+.phase.hot .idx{color:var(--sos)}
+
+.bom{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line)}
+.bom .cell{background:var(--surface); padding:18px; display:flex; flex-direction:column; gap:6px}
+.bom .role{font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3)}
+.bom .part{font-family:var(--sans); font-size:14px; font-weight:600; color:var(--ink); line-height:1.35}
+.bom .why{font-family:var(--serif); font-size:13px; color:var(--ink-2); line-height:1.5}
+
+footer{margin-top:80px; padding-top:26px; border-top:1px solid var(--line);
+  font-family:var(--mono); font-size:11.5px; color:var(--ink-3); line-height:1.7; max-width:70ch}
+code{font-family:var(--mono); font-size:.88em; background:var(--surface-3); padding:1px 5px; border-radius:2px; color:var(--ink)}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+@media (max-width:640px){
+  .phase{grid-template-columns:40px 1fr; gap:12px}
+  .phase .gate{grid-column:2}
+  .wrap{padding:0 18px 72px}
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <div class="eyebrow">
+    <span>Architecture v4</span><span class="sep"></span>
+    <span>ESP32 &middot; SIM800L &middot; PH</span><span class="sep"></span>
+    <span>28 Aug 2026</span>
+  </div>
+  <h1>Four Fixes, One Uplink</h1>
+  <p class="standfirst">A child tracker on 2G in the Philippines: four layered position sources,
+  one bursty HTTPS uplink, and SMS as the channel that cannot be killed.
+  <em>The design turns on a single deadline — transmit at five seconds, whatever the fix looks
+  like.</em></p>
+</header>
+
+<div class="constraint">
+  <div class="tag">The constraint that shapes everything</div>
+  <p><b>GNSS does not work indoors, and indoors is where children spend their days.</b>
+  Satellite signal sits near &minus;130&nbsp;dBm and buildings attenuate it 10&ndash;30&nbsp;dB;
+  through a school's concrete you get nothing at all. A-GNSS does not rescue this &mdash; assistance
+  data cuts time-to-first-fix, it does not improve sensitivity. So GNSS is demoted to one source
+  among four, Wi-Fi scanning becomes the indoor primary, and the firmware is built around a
+  transmit deadline rather than a fix quality target.</p>
+</div>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Revision note</div>
+    <h2>Why Find My Device was cut</h2>
+  </div>
+  <div class="revnote">
+    <div class="tag">Removed in v3</div>
+    <p>v1 used Google's Find My Device network as the only channel; v2 kept it as a free fallback
+    beneath a cellular primary. Both were wrong, and &ldquo;add a free backup radio&rdquo; is a
+    tempting enough instinct to be worth recording why.</p>
+    <ol>
+      <li><b>Its coverage is a subset of what it was meant to back up.</b> Detection needs nearby
+      Android phones opted into the network &mdash; often several, since the setting commonly
+      defaults to high-traffic areas only. Places dense with phone-carrying people are
+      overwhelmingly places with cell coverage. It is weakest exactly where a fallback is needed.</li>
+      <li><b>Its one real niche is already covered.</b> Dense indoors with poor cellular is genuine
+      FMDN territory &mdash; and it is precisely what the Wi-Fi scan does better, with no third
+      party and no extra radio.</li>
+      <li><b>It introduces a problem that otherwise does not exist.</b> A device that advertises
+      nothing trips no unwanted-tracker detection. Adding the beacon opts the child into
+      &ldquo;unknown tracker travelling with you&rdquo; alerts on every nearby phone.</li>
+    </ol>
+    <p><b>Also revised since:</b> the SIM7080G was out of stock, so this builds on a
+    <b>SIM800L</b> — 2G only, which is the right call in the Philippines where 2G is widely
+    deployed and LTE-M effectively is not. That substitution cost us TLS on the modem and two
+    days of battery, and bought us SMS as a channel that cannot be killed.</p>
+    <p><b>What we give up by dropping FMDN:</b> a tracker that is off, dead, or out of coverage
+    is simply gone.
+    FMDN answers &ldquo;where did the <em>device</em> go&rdquo; &mdash; a lost-property question,
+    not a child-safety one. Mitigated by last-known position with an honest age, a remote-triggered
+    buzzer, and a short-range find mode the parent turns on only while searching.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Figure 1</div>
+    <h2>End-to-end system</h2>
+  </div>
+  <p class="prose">Two devices, one server, and two channels out of the tracker that fail in
+  completely different ways. The HTTPS path carries everything rich; the SMS path carries
+  everything that must arrive.</p>
+
+  <div class="legend">
+    <div class="item">
+      <svg width="42" height="10" aria-hidden="true"><line class="e-live" x1="1" y1="5" x2="41" y2="5"/></svg>
+      <span>HTTPS burst &middot; 200 is the ack</span>
+    </div>
+    <div class="item">
+      <svg width="42" height="10" aria-hidden="true"><line class="e-sos" x1="1" y1="5" x2="41" y2="5"/></svg>
+      <span>SMS &middot; no GPRS, no TLS, no server</span>
+    </div>
+    <div class="item">
+      <svg width="42" height="10" aria-hidden="true"><line class="e-fall" x1="1" y1="5" x2="41" y2="5"/></svg>
+      <span>Conditional &middot; on cache miss only</span>
+    </div>
+  </div>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 1140 566" style="min-width:880px" role="img" aria-label="System architecture: the ESP32 tracker holds an SOS button and four position sources feeding a SIM800L 2G modem. Two channels leave it — a direct SMS straight to the parent phone bypassing the server entirely, and a bursty HTTPS connection to FastAPI, which writes to the database and hands SOS events to the alert dispatcher for the escalation ladder. A separate ESP32 plus RC522 scanner at the school gate posts attendance taps to the same FastAPI. A locate-now command travels back to the tracker as an SMS that wakes the modem from sleep. The geolocation provider is consulted only on a known-place cache miss.">
+        <defs>
+          <marker id="f1-live" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-live" points="0,0 10,4 0,8"/></marker>
+          <marker id="f1-sos" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-sos" points="0,0 10,4 0,8"/></marker>
+          <marker id="f1-ink" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-ink" points="0,0 10,4 0,8"/></marker>
+          <marker id="f1-fall" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-fall" points="0,0 10,4 0,8"/></marker>
+        </defs>
+
+        <!-- tracker -->
+        <rect class="n-box-dev" x="20" y="56" width="250" height="336" rx="3"/>
+        <text class="t-title" x="36" y="80">ESP32 tracker &middot; worn</text>
+
+        <rect class="n-box-sos" x="36" y="90" width="218" height="32" rx="2"/>
+        <text class="t-sos" x="48" y="111">SOS button &middot; 2 s hold</text>
+
+        <text class="t-xs" x="36" y="142">POSITION SOURCES &middot; PRIORITY ORDER</text>
+        <rect class="n-box" x="36" y="150" width="218" height="30" rx="2"/>
+        <text class="t-idx" x="48" y="170">1</text><text class="t-sm" x="66" y="170">GNSS (NEO-6M)</text>
+        <text class="t-xs" x="176" y="170">outdoors</text>
+        <rect class="n-box-live" x="36" y="184" width="218" height="30" rx="2"/>
+        <text class="t-idx" x="48" y="204">2</text><text class="t-sm" x="66" y="204">Wi-Fi AP scan</text>
+        <text class="t-live" x="164" y="204">indoor primary</text>
+        <rect class="n-box" x="36" y="218" width="218" height="30" rx="2"/>
+        <text class="t-idx" x="48" y="238">3</text><text class="t-sm" x="66" y="238">BLE anchors</text>
+        <text class="t-xs" x="176" y="238">known places</text>
+        <rect class="n-box" x="36" y="252" width="218" height="30" rx="2"/>
+        <text class="t-idx" x="48" y="272">4</text><text class="t-sm" x="66" y="272">Cell tower ID</text>
+        <text class="t-xs" x="196" y="272">the floor</text>
+
+        <rect class="n-box-live" x="36" y="300" width="218" height="44" rx="2"/>
+        <text class="t-live" x="48" y="319">SIM800L &middot; 2G</text>
+        <text class="t-xs" x="48" y="335">+ flash retry queue</text>
+        <text class="t-xs" x="36" y="366">up to 2 A bursts &mdash; straight off the LiPo</text>
+        <text class="t-xs" x="36" y="382">advertises nothing &mdash; not trackable</text>
+
+        <!-- scanner -->
+        <rect class="n-box-dev" x="20" y="440" width="250" height="96" rx="3"/>
+        <text class="t-title" x="36" y="464">ESP32 + RC522 scanner</text>
+        <text class="t-xs" x="36" y="482">school gate &middot; mains powered</text>
+        <text class="t-xs" x="36" y="499">DS3231 RTC &rarr; honest offline timestamps</text>
+        <text class="t-xs" x="36" y="516">UID only &mdash; attendance, never access control</text>
+
+        <!-- server -->
+        <rect class="n-box-live" x="430" y="284" width="180" height="80" rx="3"/>
+        <text class="t-title" x="444" y="311">FastAPI</text>
+        <text class="t-xs" x="444" y="329">ingest + parent API</text>
+        <text class="t-xs" x="444" y="345">no broker, no worker</text>
+
+        <rect class="n-box" x="430" y="422" width="180" height="66" rx="3"/>
+        <text class="t-title" x="444" y="449">SQLite / Postgres</text>
+        <text class="t-xs" x="444" y="467">source-tagged positions</text>
+
+        <rect class="n-box-sos" x="690" y="284" width="176" height="80" rx="3"/>
+        <text class="t-title" x="704" y="311">Alert dispatcher</text>
+        <text class="t-xs" x="704" y="329">escalation ladder</text>
+        <text class="t-xs" x="704" y="345">halted by ack</text>
+
+        <rect class="n-box" x="920" y="56" width="190" height="104" rx="3"/>
+        <text class="t-title" x="934" y="82">Parent PWA</text>
+        <text class="t-xs" x="934" y="100">live map &middot; one-tap ack</text>
+        <text class="t-xs" x="934" y="117">push &middot; SMS &middot; voice</text>
+        <text class="t-xs" x="934" y="134">"locate now" button</text>
+
+        <rect class="n-box-off" x="690" y="440" width="230" height="58" rx="3"/>
+        <text class="t-fall" x="704" y="463">Geolocation provider</text>
+        <text class="t-xs" x="704" y="481">key server-side &middot; cache miss only</text>
+        <line class="e-fall" x1="610" y1="455" x2="684" y2="455" marker-end="url(#f1-fall)"/>
+
+        <!-- SMS direct: bypasses the entire server -->
+        <line class="e-sos" x1="270" y1="106" x2="914" y2="106" stroke-width="3" marker-end="url(#f1-sos)"/>
+        <text class="t-sos" x="330" y="96">SMS DIRECT TO PARENT &mdash; no GPRS, no TLS, no server in the path</text>
+        <text class="t-xs" x="330" y="122">~5-10 s. Survives congestion, a wrong APN, and your server being down.</text>
+
+        <!-- tracker HTTPS -->
+        <polyline class="e-live" points="270,322 350,322 350,306 424,306" marker-end="url(#f1-live)"/>
+        <text class="t-live" x="276" y="314">HTTPS burst</text>
+
+        <!-- scanner HTTPS -->
+        <polyline class="e-live" points="270,470 386,470 386,344 424,344" marker-end="url(#f1-live)"/>
+        <text class="t-live" x="278" y="462">taps, batched</text>
+
+        <!-- server internals -->
+        <line class="e-ink" x1="520" y1="364" x2="520" y2="416" marker-end="url(#f1-ink)"/>
+        <text class="t-lab" x="528" y="394">write</text>
+        <line class="e-sos" x1="610" y1="324" x2="684" y2="324" marker-end="url(#f1-sos)"/>
+        <text class="t-sos" x="614" y="314">SOS</text>
+        <polyline class="e-sos" points="866,304 1015,304 1015,166" marker-end="url(#f1-sos)"/>
+        <text class="t-sos" x="1023" y="240">alert</text>
+
+        <!-- locate downlink -->
+        <polyline class="e-sos" points="470,364 470,400 276,400" stroke-dasharray="6 4" marker-end="url(#f1-sos)"/>
+        <text class="t-sos" x="292" y="392">SMS: LOCATE &rarr; wakes the modem from sleep</text>
+      </svg>
+    </div>
+    <figcaption><b>Figure 1.</b> The two channels out of the tracker fail independently: HTTPS
+    needs GPRS, a TLS handshake and a live server; the SMS needs none of them. That is why the SOS
+    fires on both at once and the server skips its own text when the device reports it already
+    sent one &mdash; one press must never arrive as two.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Transport</div>
+    <h2>Why HTTP beat MQTT here</h2>
+  </div>
+  <p class="prose">The plan called for MQTT. Then the GPRS session had to become bursty rather
+  than persistent &mdash; carrier NAT drops an idle TCP session after 1&ndash;5 minutes, and the
+  ~60&nbsp;s keepalives needed to fight that stop the modem ever reaching <code>AT+CSCLK</code>
+  sleep, the biggest power lever available. You would spend the battery keeping alive a socket
+  the carrier kills anyway.</p>
+  <p class="prose">Once the connection is bursty, MQTT's persistent session buys nothing, and
+  plain HTTPS is simpler in three concrete ways: <b>no broker</b> to run or secure, so the ingest
+  worker collapses into a FastAPI route; <b>the 200 response is the ack</b>, removing the trap
+  where QoS&nbsp;1 confirms delivery to the broker rather than to your server; and it is
+  <b>debuggable with curl</b>, which on a 2G link you will want.</p>
+  <p class="prose">Two rules come with it. <b>Batch</b>, so the 3&ndash;8&nbsp;s handshake is
+  amortised over many points instead of paid per point. And give every event an <b>id</b>, so a
+  retried POST is idempotent &mdash; a redelivery must never become a second position. One
+  gotcha: TLS validation needs a roughly-correct clock and the ESP32 has no RTC, so pull the time
+  from the modem with <code>AT+CCLK?</code> before the first handshake or every connection fails
+  validation for no visible reason.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Coverage</div>
+    <h2>What actually works, where</h2>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Environment</th><th>GNSS</th><th>Wi-Fi scan</th><th>BLE anchor</th><th>Cell ID</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Outdoors, open sky</td><td><span class="num">5&ndash;15 m</span></td><td class="dash">&mdash;</td><td class="dash">&mdash;</td><td class="dash">&mdash;</td><td><span class="pill good">excellent</span></td></tr>
+        <tr><td>Urban street</td><td><span class="num">10&ndash;30 m</span></td><td><span class="num">15&ndash;40 m</span></td><td class="dash">&mdash;</td><td class="dash">&mdash;</td><td><span class="pill good">good</span></td></tr>
+        <tr><td>Home / apartment</td><td class="dash">poor&ndash;none</td><td><span class="num">10&ndash;30 m</span></td><td>exact place</td><td class="dash">&mdash;</td><td><span class="pill good">good</span></td></tr>
+        <tr><td>School, office</td><td class="dash">none</td><td><span class="num">15&ndash;40 m</span></td><td>exact place</td><td class="dash">&mdash;</td><td><span class="pill good">good</span></td></tr>
+        <tr><td>Mall, transit hub</td><td class="dash">none</td><td><span class="num">20&ndash;50 m</span></td><td class="dash">&mdash;</td><td class="dash">&mdash;</td><td><span class="pill mid">usable</span></td></tr>
+        <tr><td>Parking garage, basement</td><td class="dash">none</td><td class="dash">sparse</td><td class="dash">&mdash;</td><td><span class="num">100 m&ndash;2 km</span></td><td><span class="pill bad">weak</span></td></tr>
+        <tr><td>Rural indoors</td><td class="dash">none</td><td class="dash">no APs in DB</td><td>exact place</td><td><span class="num">1&ndash;5 km</span></td><td><span class="pill bad">poor</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose"><b>The uplink survives where the fix does not.</b> LTE-M and especially NB-IoT
+  were designed for basement utility meters &mdash; NB-IoT's coverage-enhancement modes buy roughly
+  20&nbsp;dB of link budget over GSM. The SOS and the offline heartbeat keep working in places
+  where a phone shows one bar. That asymmetry is the main argument for LTE-M over a plain LTE
+  modem.</p>
+  <p class="prose"><b>Known-place anchoring solves cost, latency and privacy at once</b> &mdash;
+  and the parent sets it up themselves, from the dashboard. See Figure 2.</p>
+  <p class="prose"><b>Where it genuinely fails:</b> underground parking, and rural interiors whose
+  one access point is in no database. Both fall through to cell-tower ID &mdash; kilometres, not
+  metres. There is no clean fix, so the honest response is to return <code>source='cell'</code>
+  with a truthful radius and draw a two-kilometre circle. Never let the map imply precision the
+  fix does not have.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Figure 2</div>
+    <h2>The parent names the place</h2>
+  </div>
+  <p class="prose">The schema always had a slot for &ldquo;these networks are school.&rdquo; What
+  it never had was a way to fill it &mdash; and asking a parent to type in MAC addresses was never
+  going to happen. Showing them <code>DepEd-Classroom-3</code> and letting them tick it does.</p>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 990 272" style="min-width:720px" role="img" aria-label="The place-naming loop: the tracker sends Wi-Fi scans with each report; the server hashes the BSSIDs and keeps seven days; the parent sees the network names in the dashboard, ticks the ones always present and names them School; the resulting rule goes back to the tracker, which then matches those networks on-device with no geolocation API call at all.">
+        <defs>
+          <marker id="f3b-live" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-live" points="0,0 10,4 0,8"/></marker>
+          <marker id="f3b-ink" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-ink" points="0,0 10,4 0,8"/></marker>
+        </defs>
+
+        <rect class="n-box-dev" x="24" y="40" width="182" height="104" rx="3"/>
+        <text class="t-title" x="38" y="66">Tracker scans</text>
+        <text class="t-xs" x="38" y="86">BSSID + SSID + RSSI</text>
+        <text class="t-xs" x="38" y="103">6 APs, with each report</text>
+        <text class="t-xs" x="38" y="120">passive &mdash; never associates</text>
+
+        <rect class="n-box" x="256" y="40" width="200" height="104" rx="3"/>
+        <text class="t-title" x="270" y="66">Server stores</text>
+        <text class="t-xs" x="270" y="86">BSSIDs hashed</text>
+        <text class="t-xs" x="270" y="103">SSIDs kept readable</text>
+        <text class="t-xs" x="270" y="120">7-day retention</text>
+
+        <rect class="n-box" x="506" y="40" width="200" height="104" rx="3"/>
+        <text class="t-title" x="520" y="66">Parent names it</text>
+        <text class="t-xs" x="520" y="86">sees "DepEd-Classroom-3"</text>
+        <text class="t-xs" x="520" y="103">and "seen 43&times; this week"</text>
+        <text class="t-xs" x="520" y="120">ticks them &rarr; "School"</text>
+
+        <rect class="n-box-live" x="756" y="40" width="200" height="104" rx="3"/>
+        <text class="t-title" x="770" y="66">Result</text>
+        <text class="t-live" x="770" y="88">"At school since 08:41"</text>
+        <text class="t-xs" x="770" y="107">not a 30 m circle</text>
+        <text class="t-xs" x="770" y="124">no API call, no third party</text>
+
+        <line class="e-live" x1="206" y1="92" x2="250" y2="92" marker-end="url(#f3b-live)"/>
+        <line class="e-ink"  x1="456" y1="92" x2="500" y2="92" marker-end="url(#f3b-ink)"/>
+        <line class="e-ink"  x1="706" y1="92" x2="750" y2="92" marker-end="url(#f3b-ink)"/>
+
+        <polyline class="e-live" points="606,144 606,204 115,204 115,150" marker-end="url(#f3b-live)"/>
+        <text class="t-live" x="360" y="224" text-anchor="middle">place rule returns to the device &mdash; matched on-device from then on</text>
+        <text class="t-xs" x="360" y="242" text-anchor="middle">the geolocation provider is never called for this place again</text>
+      </svg>
+    </div>
+    <figcaption><b>Figure 2.</b> The loop closes on the device. Once a place is named, the
+    matching happens in firmware against stored hashes &mdash; which is simultaneously the
+    cheapest, the fastest and the most private outcome, because the provider never sees the
+    networks the child sits inside every day.</figcaption>
+  </figure>
+
+  <p class="prose"><b>BSSIDs are stored hashed; SSIDs are not.</b> An access-point history is a
+  finer-grained record of where a child has been than the coordinate history sitting next to it,
+  so a database dump must not hand one over. But the parent needs something they can recognise to
+  click on, and the matching runs on the hashes either way.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Figure 3</div>
+    <h2>The five-second rule, indoors and out</h2>
+  </div>
+  <p class="prose">The instinct is to wait for a good GNSS fix before transmitting. Outdoors that
+  costs ten seconds. Indoors it costs everything, because the GNSS branch never returns at all.</p>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 1000 490" style="min-width:760px" role="img" aria-label="Two timelines comparing the same SOS press outdoors and indoors. In both, cell tower ID resolves in 2 seconds and the Wi-Fi scan in 4, and the device transmits at 5 seconds. Outdoors the GNSS fix completes at 15 seconds and refines the position to 12 metres. Indoors the GNSS search never completes, so the 25-metre Wi-Fi fix sent at 5 seconds is the final answer.">
+        <defs>
+          <marker id="f2-ink" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-ink" points="0,0 10,4 0,8"/></marker>
+        </defs>
+
+        <!-- PANEL A: outdoors -->
+        <text class="t-live" x="20" y="36">OUTDOORS</text>
+        <text class="t-sos" x="291" y="36">TRANSMIT &middot; t+5 s</text>
+
+        <text class="t-sm" x="20" y="64">Cell tower ID</text>
+        <text class="t-sm" x="20" y="94">Wi-Fi AP scan</text>
+        <text class="t-sm" x="20" y="124">GNSS warm fix</text>
+
+        <rect class="n-box-live" x="150" y="50" width="53" height="20" rx="2"/>
+        <rect class="n-box-live" x="150" y="80" width="107" height="20" rx="2"/>
+        <rect class="n-box-live" x="150" y="110" width="400" height="20" rx="2"/>
+
+        <line class="e-sos" x1="283" y1="42" x2="283" y2="154" stroke-width="3"/>
+        <line class="e-live" x1="550" y1="110" x2="550" y2="154" stroke-dasharray="5 4"/>
+        <text class="t-live" x="558" y="126">fix at 15 s &rarr; 12 m</text>
+
+        <line class="e-ink" x1="150" y1="154" x2="962" y2="154" marker-end="url(#f2-ink)"/>
+        <text class="t-xs" x="150" y="172" text-anchor="middle">0</text>
+        <text class="t-xs" x="283" y="172" text-anchor="middle">5 s</text>
+        <text class="t-xs" x="417" y="172" text-anchor="middle">10 s</text>
+        <text class="t-xs" x="550" y="172" text-anchor="middle">15 s</text>
+        <text class="t-xs" x="683" y="172" text-anchor="middle">20 s</text>
+        <text class="t-xs" x="817" y="172" text-anchor="middle">25 s</text>
+        <text class="t-xs" x="950" y="172" text-anchor="middle">30 s</text>
+
+        <text class="t-sm" x="20" y="198">Sent at 5 s on the Wi-Fi fix, then refined by GNSS. Waiting would have cost 10 s.</text>
+
+        <line class="e-thin" x1="20" y1="222" x2="980" y2="222"/>
+
+        <!-- PANEL B: indoors -->
+        <text class="t-sos" x="20" y="256">INDOORS &mdash; school, mall, home</text>
+        <text class="t-sos" x="291" y="256">TRANSMIT &middot; t+5 s</text>
+
+        <text class="t-sm" x="20" y="284">Cell tower ID</text>
+        <text class="t-sm" x="20" y="314">Wi-Fi AP scan</text>
+        <text class="t-sm" x="20" y="344">GNSS warm fix</text>
+
+        <rect class="n-box-live" x="150" y="270" width="53" height="20" rx="2"/>
+        <rect class="n-box-live" x="150" y="300" width="107" height="20" rx="2"/>
+        <rect class="n-box-off" x="150" y="330" width="812" height="20" rx="2"/>
+        <text class="t-xs" x="164" y="344">searching &mdash; no fix, ever</text>
+
+        <line class="e-sos" x1="283" y1="262" x2="283" y2="374" stroke-width="3"/>
+
+        <line class="e-ink" x1="150" y1="374" x2="962" y2="374" marker-end="url(#f2-ink)"/>
+        <text class="t-xs" x="150" y="392" text-anchor="middle">0</text>
+        <text class="t-xs" x="283" y="392" text-anchor="middle">5 s</text>
+        <text class="t-xs" x="417" y="392" text-anchor="middle">10 s</text>
+        <text class="t-xs" x="550" y="392" text-anchor="middle">15 s</text>
+        <text class="t-xs" x="683" y="392" text-anchor="middle">20 s</text>
+        <text class="t-xs" x="817" y="392" text-anchor="middle">25 s</text>
+        <text class="t-xs" x="950" y="392" text-anchor="middle">30 s</text>
+
+        <text class="t-sos" x="20" y="418">Sent at 5 s on the Wi-Fi fix &mdash; 25 m, and that is the final answer. Waiting would wait forever.</text>
+
+        <rect class="n-box-sos" x="150" y="434" width="812" height="46" rx="3"/>
+        <text class="t-sm" x="164" y="454">No network at t+5 s? Persist to flash with the original timestamp and retry with exponential backoff &mdash; forever.</text>
+        <text class="t-xs" x="164" y="471">MQTT QoS 1 is not confirmation. The device stops retrying only when the server acknowledges the event ID.</text>
+      </svg>
+    </div>
+    <figcaption><b>Figure 3.</b> Same press, same deadline, different winning source. The deadline
+    is not an optimisation &mdash; it is what makes the device work indoors at all. A design that
+    waits for fix quality is a design that never fires in a school.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Figure 4</div>
+    <h2>Escalation, not fan-out</h2>
+  </div>
+  <p class="prose">Sending every channel at once and hoping is not a design. The ladder assumes the
+  first parent may be asleep, driving, or out of signal, and keeps climbing until a human
+  acknowledges &mdash; at which point it stops dead and records who answered.</p>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 1000 346" style="min-width:760px" role="img" aria-label="SOS escalation timeline over 300 seconds: at t plus zero, push, SMS and WebSocket go to every parent device; at t plus 60 seconds SMS goes to the secondary contact; a parent acknowledgement at t plus 100 seconds halts the ladder, so the t plus 180 and t plus 300 second voice calls are never placed.">
+        <defs>
+          <marker id="f3-ink" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto"><polygon class="m-ink" points="0,0 10,4 0,8"/></marker>
+        </defs>
+
+        <rect class="n-box-sos" x="40" y="86" width="140" height="70" rx="3"/>
+        <text class="t-sos" x="52" y="108">t+0 s</text>
+        <text class="t-sm" x="52" y="126">Push &middot; SMS &middot; WS</text>
+        <text class="t-xs" x="52" y="143">all parent devices</text>
+        <line class="e-sos" x1="110" y1="156" x2="110" y2="228"/>
+
+        <rect class="n-box-sos" x="196" y="86" width="140" height="70" rx="3"/>
+        <text class="t-sos" x="208" y="108">t+60 s</text>
+        <text class="t-sm" x="208" y="126">SMS &rarr; secondary</text>
+        <text class="t-xs" x="208" y="143">no ack yet</text>
+        <line class="e-sos" x1="266" y1="156" x2="266" y2="228"/>
+
+        <rect class="n-box-off" x="508" y="86" width="140" height="70" rx="3"/>
+        <text class="t-xs" x="520" y="108">t+180 s</text>
+        <text class="t-xs" x="520" y="126">Voice &rarr; primary</text>
+        <text class="t-xs" x="520" y="143">never placed</text>
+        <line class="e-thin" x1="578" y1="156" x2="578" y2="228" stroke-dasharray="4 4"/>
+
+        <rect class="n-box-off" x="820" y="86" width="140" height="70" rx="3"/>
+        <text class="t-xs" x="832" y="108">t+300 s</text>
+        <text class="t-xs" x="832" y="126">Voice &rarr; secondary</text>
+        <text class="t-xs" x="832" y="143">never placed</text>
+        <line class="e-thin" x1="890" y1="156" x2="890" y2="228" stroke-dasharray="4 4"/>
+
+        <line x1="370" y1="46" x2="370" y2="266" stroke="var(--ok)" stroke-width="2" stroke-dasharray="7 4"/>
+        <circle cx="370" cy="228" r="5" fill="var(--ok)"/>
+        <text x="380" y="42" style="fill:var(--ok)" class="t-lab">PARENT ACKNOWLEDGES &middot; t+100 s</text>
+        <text x="380" y="58" class="t-xs">ladder halts &middot; recorded against the event</text>
+
+        <line class="e-ink" x1="60" y1="228" x2="972" y2="228" marker-end="url(#f3-ink)"/>
+        <text class="t-xs" x="110" y="250" text-anchor="middle">0</text>
+        <text class="t-xs" x="266" y="250" text-anchor="middle">60 s</text>
+        <text class="t-xs" x="578" y="250" text-anchor="middle">180 s</text>
+        <text class="t-xs" x="890" y="250" text-anchor="middle">300 s</text>
+
+        <rect class="n-box" x="40" y="284" width="920" height="46" rx="3"/>
+        <text class="t-sm" x="56" y="304">Every message carries a one-tap deep link to the live map, not bare coordinates.</text>
+        <text class="t-xs" x="56" y="321">Rate limit: 5 SOS/hour/device &mdash; suppressed events still raise a "possible stuck button" operator alert.</text>
+      </svg>
+    </div>
+    <figcaption><b>Figure 4.</b> The mechanism is the cut, not the ladder. Without an
+    acknowledgement endpoint, escalation either runs to completion every time &mdash; training
+    parents to ignore it &mdash; or is inferred from delivery receipts, which prove nothing about
+    whether a human read it.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Power model</div>
+    <h2>Report on state change, not on a timer</h2>
+  </div>
+  <p class="prose">A fixed interval wastes the modem when the child has sat in a classroom for four
+  hours, and is far too slow when they are in a car. Geofences are evaluated on-device, so a
+  &ldquo;left school&rdquo; alert never waits for the next upload.</p>
+  <p class="prose"><b>There is no accelerometer in the BOM</b>, so motion is inferred from the
+  radios already present: the serving cell every 60&nbsp;s (free &mdash; the modem is awake
+  anyway), and a Wi-Fi scan every 2&ndash;5&nbsp;min compared against the last by Jaccard
+  similarity. That scan is the authority, and it costs about 0.5% of the battery per day.</p>
+  <p class="prose">This is arguably the <em>better</em> signal. An accelerometer answers the wrong
+  question &mdash; it reports that the device is being jostled, which a child fidgeting at a desk
+  does all day, and every false &ldquo;moving&rdquo; burns a modem wake. A changed Wi-Fi
+  neighbourhood reports that the child is somewhere <em>else</em>, which is what the cadence
+  actually cares about. What is genuinely lost is interrupt-driven wake from sleep, which matters
+  little when the modem outdraws the sleeping MCU by three orders of magnitude.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>State</th><th>Detected by</th><th>Cadence</th></tr></thead>
+      <tbody>
+        <tr><td>Stationary</td><td>Wi-Fi BSSID set unchanged (Jaccard &ge; 0.55), same serving cell</td><td><span class="num">1 / 30 min</span></td></tr>
+        <tr><td>Moving</td><td>BSSID set changed, or serving cell changed</td><td><span class="num">1 / 2 min</span></td></tr>
+        <tr><td>No usable signal</td><td>No APs visible <em>and</em> no cell change &mdash; rural</td><td>Fixed <span class="num">1 / 10 min</span> &mdash; never guess &ldquo;stationary&rdquo;</td></tr>
+        <tr><td>Geofence crossing</td><td>On-device polygon test</td><td><span class="pill bad">immediate</span></td></tr>
+        <tr><td>SOS active</td><td>Button</td><td><span class="num">1 / 30 s</span> for 30 min</td></tr>
+        <tr><td>Low battery &lt; 15%</td><td>Fuel gauge</td><td>Alert, then <span class="num">1 / hr</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose">Target on a 2000&nbsp;mAh cell is five days, charged every three or four. Measure
+  with a PPK2 or INA219 &mdash; datasheet figures will not survive a real TLS handshake. Push a
+  low-battery alert at 20% <em>and</em> 10%: a dead tracker still showing its last pin is the worst
+  failure this system can produce.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Bill of materials</div>
+    <h2>Prototype hardware</h2>
+  </div>
+  <div class="bom">
+    <div class="cell"><div class="role">Compute</div><div class="part">ESP32 (WROOM-32)</div><div class="why">Supplies Wi-Fi and BLE scanning itself — two of the four position sources, at no extra cost.</div></div>
+    <div class="cell"><div class="role">Uplink</div><div class="part">SIM800L</div><div class="why">2G. Correct for the Philippines, where LTE-M and NB-IoT are not meaningfully available.</div></div>
+    <div class="cell"><div class="role">GNSS</div><div class="part">NEO-6M</div><div class="why">Keep V_BCKP powered, or every fix becomes a 27 s cold start instead of a ~1 s hot one.</div></div>
+    <div class="cell"><div class="role">Power</div><div class="part">2500–3000 mAh LiPo</div><div class="why">Bigger than planned: no LTE-M sleep mode means 2–3 days, not five.</div></div>
+    <div class="cell"><div class="role">Non-negotiable</div><div class="part">1000–2200 µF bulk cap</div><div class="why">SIM800L pulls 2 A in bursts. Without this, the rail browns out and the ESP32 resets — which reads as a firmware bug for days.</div></div>
+    <div class="cell"><div class="role">Feedback</div><div class="part">LED <em>(motor out of stock)</em></div><div class="why">Same GPIO the motor will use. A buzz is felt through a pocket; an LED must be looked at &mdash; so the ack cue repeats for 20 s instead of firing once.</div></div>
+    <div class="cell"><div class="role">Scanner</div><div class="part">ESP32 + RC522</div><div class="why">Gate attendance station. 3.3 V only — 5 V destroys the reader. UID only, so attendance, never access control.</div></div>
+    <div class="cell"><div class="role">Scanner clock</div><div class="part">DS3231 RTC</div><div class="why">School Wi-Fi drops. A buffered tap with a wrong timestamp silently corrupts the record.</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Sequence</div>
+    <h2>Build order, with gates</h2>
+  </div>
+  <p class="prose">Phase 0 is the only real go/no-go in the project, and it now carries two gates:
+  the uplink and the indoor fix. Both are a weekend with a bare module. Both are ruinous to
+  discover in Phase 3.</p>
+  <div class="phases">
+    <div class="phase">
+      <div class="idx">00</div>
+      <div class="what">Verify 2G coverage on <em>both</em> Globe and Smart, <em>and</em> Wi-Fi geolocation accuracy, on the child's real routes &mdash; indoors and out</div>
+      <div class="gate">GATE &middot; <span><code>AT+CREG?</code> and <code>AT+CSQ</code> pass on the school run; Wi-Fi resolves to &le; 50 m inside the school; SIM registered under RA 11934</span></div>
+    </div>
+    <div class="phase hot">
+      <div class="idx">01</div>
+      <div class="what">SOS end-to-end: button &rarr; cellular &rarr; dispatcher &rarr; SMS, push and voice, with acknowledgement</div>
+      <div class="gate">GATE &middot; <span>p95 press-to-notification &le; 20 s over 50 presses; 100% delivery from a dead zone; 20 indoor presses yield a usable fix; zero false SOS in 14 days of wear</span></div>
+    </div>
+    <div class="phase">
+      <div class="idx">02</div>
+      <div class="what">Layered position fusion, known-place anchoring, BLE anchors, adaptive cadence, geofences</div>
+      <div class="gate">GATE &middot; <span>&ge; 5 days runtime; correct place detection at home and school for a week</span></div>
+    </div>
+    <div class="phase">
+      <div class="idx">03</div>
+      <div class="what">FastAPI, schema, Leaflet dashboard, auth with 2FA, PWA push</div>
+      <div class="gate">GATE &middot; <span>No unauthenticated endpoint; per-device grants enforced in every query; WebSocket authenticated</span></div>
+    </div>
+    <div class="phase">
+      <div class="idx">04</div>
+      <div class="what">RFID attendance scanner at the gate, with offline tap buffering</div>
+      <div class="gate">GATE &middot; <span>Taps survive a Wi-Fi outage with correct RTC timestamps; school network access agreed with IT</span></div>
+    </div>
+    <div class="phase">
+      <div class="idx">05</div>
+      <div class="what">Enclosure, field trial, SOS drills with the child</div>
+      <div class="gate">GATE &middot; <span>30-day trial, no missed SOS; the child explains the confirmation patterns unprompted</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Failure modes</div>
+    <h2>Silence is the enemy</h2>
+  </div>
+  <p class="prose">Every failure below has the same shape: the system stops knowing where the child
+  is, and the UI keeps showing the last pin as though nothing happened. Each needs an active
+  alert, not a greyed-out dot.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Failure</th><th>Detected by</th><th>Response</th></tr></thead>
+      <tbody>
+        <tr><td>Battery dead</td><td>No telemetry for 2&times; expected interval</td><td>Push &ldquo;tracker offline since 14:20&rdquo;</td></tr>
+        <tr><td>No cell coverage</td><td>Modem detach</td><td>Queue in flash; show last known with its true age</td></tr>
+        <tr><td>No position source</td><td>All four sources fail or return cell-only</td><td>Report <code>source='cell'</code> with an honest radius &mdash; never fake precision</td></tr>
+        <tr><td>Geolocation provider down</td><td>API 4xx/5xx or quota</td><td>Fall back to anchors + cell; operator alert; positions still flow</td></tr>
+        <tr><td>Server down</td><td>External uptime monitor</td><td>Page the operator; device queues and replays</td></tr>
+        <tr><td>Prepaid load exhausted</td><td>GPRS attach fails; balance poll</td><td>Warn the parent <em>before</em> zero — in PH this is a routine, silent outage</td></tr>
+        <tr><td>SIM deregistered (RA 11934)</td><td>Registration refused</td><td>Operator alert — it looks exactly like a hardware fault</td></tr>
+        <tr><td>Stuck button</td><td>&gt; 5 SOS/hour</td><td>Rate-limit plus a distinct operator alert</td></tr>
+        <tr><td>Device left behind</td><td>No motion at a known place for hours</td><td>Optional &ldquo;possibly not with the child&rdquo; notice</td></tr>
+        <tr><td>Device lost or stolen</td><td>&mdash;</td><td>Revoke the device certificate; remote key wipe</td></tr>
+        <tr><td>Clock skew on device</td><td>Server-side timestamp check</td><td>Trust <code>received_at</code>; flag the record</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <div class="sec-num">Before Phase 00</div>
+    <h2>Two things that still bite</h2>
+  </div>
+  <p class="prose"><b>Conflating position sources is the most dangerous bug available here.</b>
+  <code>/api/devices</code> must return <code>source</code>, <code>accuracy_m</code> and
+  <code>recorded_at</code> alongside the coordinates, and the map must never render a
+  two-kilometre cell estimate the way it renders a four-second GNSS fix. Age badge on every pin,
+  ring sized by real accuracy, desaturate past 15 minutes &mdash; and where a known place matches,
+  show the place instead of the pin.</p>
+  <p class="prose"><b>Tell the child.</b> Dropping the beacon removed the anti-stalking problem
+  but not the human one. A tracker a child knows about is a safety tool; one they discover is
+  surveillance, and the discovery destroys trust irreparably. Age-appropriate disclosure, let them
+  see their own map, and get the other parent's agreement in writing &mdash; in shared-custody
+  situations, unilateral tracking has been treated as harassment.</p>
+</section>
+
+<footer>
+  Companion to PLAN.md &middot; revision 4. A live database of a child's real-time position is
+  among the highest-value targets a self-hosted server can carry &mdash; per-device mTLS, Argon2id
+  with mandatory 2FA on parent accounts, a 90-day retention job that actually runs, the
+  geolocation API key server-side only, and no port-forwarding from a home router. If this becomes
+  a deliverable for a client rather than your own child, get real legal review before anyone
+  else's child wears it.
+</footer>
+
+</div>

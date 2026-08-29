@@ -1,0 +1,164 @@
+:root{
+  --bg:#eef1f5; --surface:#fff; --line:#cfd8e2;
+  --ink:#141a21; --ink-2:#4c5866; --ink-3:#6d7b8b;
+  --accent:#0b6e68; --sos:#b93630; --ok:#2c6e4e; --warn:#8a6212;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e1318; --surface:#161d25; --line:#2b3641;
+    --ink:#e5ebf2; --ink-2:#a7b3c1; --ink-3:#818e9c;
+    --accent:#46c3b3; --sos:#f0776f; --ok:#63c48f; --warn:#d9a441;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.5 system-ui,-apple-system,sans-serif;
+  display:flex; flex-direction:column;
+}
+header{
+  display:flex; align-items:center; gap:14px;
+  padding:12px 18px; border-bottom:1px solid var(--line); background:var(--surface);
+}
+h1{font-size:16px; margin:0; letter-spacing:-.01em}
+h2{font-size:11px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-3)}
+.chip{
+  margin-left:auto; font-family:var(--mono); font-size:11px;
+  padding:3px 9px; border-radius:3px; background:var(--bg); color:var(--ink-3);
+}
+.chip.live{color:var(--ok)}
+.chip.down{color:var(--sos)}
+
+main{flex:1; display:flex; min-height:0}
+#sidebar{
+  width:320px; flex:none; overflow-y:auto; padding:14px;
+  border-right:1px solid var(--line); background:var(--surface);
+  display:flex; flex-direction:column; gap:16px;
+}
+#map{flex:1; min-height:0}
+
+.dev{
+  border:1px solid var(--line); border-radius:4px; padding:12px;
+  background:var(--bg); display:flex; flex-direction:column; gap:8px; margin-bottom:10px;
+}
+.dev .top{display:flex; align-items:baseline; gap:8px}
+.dev .name{font-weight:600}
+.dev .place{font-size:13px; color:var(--accent); font-weight:600}
+.dev .meta{font-family:var(--mono); font-size:11px; color:var(--ink-3); display:flex; flex-wrap:wrap; gap:10px}
+.dev .meta b{color:var(--ink-2); font-weight:600}
+.dev.stale{opacity:.62}
+.dev .age{font-family:var(--mono); font-size:11px; margin-left:auto; color:var(--ink-3)}
+.dev.stale .age{color:var(--warn)}
+.dev button{
+  font:inherit; font-size:12px; padding:6px 10px; cursor:pointer;
+  border:1px solid var(--accent); background:transparent; color:var(--accent); border-radius:3px;
+}
+.dev button:disabled{opacity:.5; cursor:default}
+.warn{color:var(--warn); font-size:12px}
+.muted{color:var(--ink-3); font-size:13px}
+.panel{border-top:1px solid var(--line); padding-top:14px}
+#attendance{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px}
+#attendance li{font-size:13px; display:flex; gap:8px}
+#attendance time{font-family:var(--mono); font-size:11px; color:var(--ink-3); margin-left:auto}
+
+#sos-banner{background:var(--sos); color:#fff; animation:pulse 1.2s ease-in-out infinite}
+.sos-inner{display:flex; align-items:center; gap:16px; padding:14px 18px; max-width:1100px; margin:0 auto}
+.sos-text{display:flex; flex-direction:column}
+.sos-text strong{font-size:17px; letter-spacing:.02em}
+.sos-text span{font-size:13px; opacity:.92}
+#sos-ack{
+  margin-left:auto; font:inherit; font-weight:600; padding:10px 18px; cursor:pointer;
+  border:0; border-radius:4px; background:#fff; color:var(--sos);
+}
+@keyframes pulse{50%{filter:brightness(1.15)}}
+@media (prefers-reduced-motion:reduce){#sos-banner{animation:none}}
+
+.leaflet-popup-content{font:13px/1.5 system-ui,sans-serif}
+.leaflet-popup-content .src{font-family:var(--mono); font-size:11px; color:#555}
+
+@media (max-width:760px){
+  main{flex-direction:column}
+  #sidebar{width:auto; max-height:44vh; border-right:0; border-bottom:1px solid var(--line)}
+}
+
+/* --- places / wifi picker --- */
+#place-add{margin-top:10px}
+#place-add summary{
+  cursor:pointer; font-size:13px; color:var(--accent); font-weight:600;
+  padding:6px 0; list-style:none;
+}
+#place-add summary::-webkit-details-marker{display:none}
+#place-add summary::before{content:"+ "; font-weight:700}
+#place-add[open] summary::before{content:"\2212 "}
+.hint{font-size:12px; color:var(--ink-3); margin:4px 0 10px; line-height:1.45}
+.ap-list{
+  display:flex; flex-direction:column; gap:2px;
+  max-height:210px; overflow-y:auto;
+  border:1px solid var(--line); border-radius:4px; padding:6px; background:var(--bg);
+}
+.ap{display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:3px; font-size:13px}
+.ap:hover{background:var(--surface)}
+.ap input{flex:none; margin:0}
+.ap .ssid{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.ap .ssid.unnamed{color:var(--ink-3); font-style:italic}
+.ap .bars{
+  margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--ink-3);
+  display:flex; gap:8px; flex:none;
+}
+.ap .taken{color:var(--accent); font-weight:600}
+.place-form{display:flex; gap:6px; margin-top:10px; flex-wrap:wrap}
+.place-form input{flex:1 1 120px; min-width:0}
+.place-form input,.place-form select,.place-form button{
+  font:inherit; font-size:13px; padding:7px 9px;
+  border:1px solid var(--line); border-radius:3px;
+  background:var(--surface); color:var(--ink);
+}
+.place-form button{border-color:var(--accent); color:var(--accent); cursor:pointer; font-weight:600}
+.place-form button:disabled{opacity:.5; cursor:default}
+.place-row{
+  display:flex; align-items:center; gap:8px; font-size:13px;
+  padding:7px 9px; border:1px solid var(--line); border-radius:4px;
+  background:var(--bg); margin-bottom:6px;
+}
+.place-row .pname{font-weight:600}
+.place-row .pmeta{font-family:var(--mono); font-size:11px; color:var(--ink-3)}
+.place-row button{
+  margin-left:auto; font:inherit; font-size:11px; padding:3px 8px; cursor:pointer;
+  border:1px solid var(--line); border-radius:3px; background:transparent; color:var(--ink-3);
+}
+.place-row button:hover{color:var(--sos); border-color:var(--sos)}
+
+/* --- sign in --- */
+#signin{
+  /* Above Leaflet: its panes run to 400 and its control corners sit at 1000,
+     so anything at or below that renders *under* an initialised map. */
+  position:fixed; inset:0; z-index:2000; background:var(--bg);
+  align-items:center; justify-content:center; padding:24px;
+}
+/* display lives on :not([hidden]), NOT on #signin itself.
+   The hidden attribute works through the UA rule [hidden]{display:none}, and an
+   ID selector outranks it — so `el.hidden = true` set the property while the
+   overlay stayed on screen, covering a dashboard that had loaded correctly.
+   Sign-in appeared to "do nothing" even though every request returned 200. */
+#signin:not([hidden]){ display:flex; }
+#signin-form{
+  display:flex; flex-direction:column; gap:12px; width:100%; max-width:320px;
+  background:var(--surface); border:1px solid var(--line); padding:28px; border-radius:6px;
+}
+#signin-form h2{margin:0 0 6px; font-size:19px; text-transform:none; letter-spacing:-.01em; color:var(--ink)}
+#signin-form input{
+  font:inherit; padding:10px 12px; border:1px solid var(--line); border-radius:4px;
+  background:var(--bg); color:var(--ink);
+}
+#signin-form button{
+  font:inherit; font-weight:600; padding:11px; cursor:pointer; border:0; border-radius:4px;
+  background:var(--accent); color:#fff;
+}
+.err{color:var(--sos); font-size:13px; margin:0; min-height:1em}
+.linkish{
+  background:none; border:0; color:var(--ink-3); font:inherit; font-size:12px;
+  cursor:pointer; padding:4px 6px;
+}
+.linkish:hover{color:var(--sos)}

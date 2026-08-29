@@ -1,0 +1,415 @@
+<title>Scanner Wiring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700&family=IBM+Plex+Serif:wght@400;600&display=swap">
+
+<style>
+:root{
+  --ground:#EDF0F4; --surface:#FFFFFF; --surface-2:#F5F7FA; --surface-3:#E7ECF2;
+  --ink:#141A21; --ink-2:#4C5866; --ink-3:#6D7B8B;
+  --line:#CFD8E2; --line-2:#E2E8F0;
+  --spi:#0B6E68; --i2c:#7A57B8; --uart:#2F6FB0; --pwr:#B93630; --warn:#8A6212;
+  --pwr-soft:#FAE8E6; --warn-soft:#FBF0DC; --ok:#2C6E4E; --ok-soft:#E2F0E8;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+    --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+    --line:#2B3641; --line-2:#222C36;
+    --spi:#46C3B3; --i2c:#A98FE0; --uart:#6BA9E6; --pwr:#F0776F; --warn:#D9A441;
+    --pwr-soft:#3A1D1B; --warn-soft:#332812; --ok:#63C48F; --ok-soft:#123023;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+  --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+  --line:#2B3641; --line-2:#222C36;
+  --spi:#46C3B3; --i2c:#A98FE0; --uart:#6BA9E6; --pwr:#F0776F; --warn:#D9A441;
+  --pwr-soft:#3A1D1B; --warn-soft:#332812; --ok:#63C48F; --ok-soft:#123023;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--serif);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1060px;margin:0 auto;padding:0 26px 90px}
+.prose{max-width:70ch}
+header.mast{border-bottom:2px solid var(--ink);padding:56px 0 24px;margin-bottom:18px;display:flex;flex-direction:column;gap:14px}
+.eyebrow{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:var(--spi);display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.eyebrow .sep{width:4px;height:4px;border-radius:50%;background:var(--line)}
+h1{font-family:var(--sans);font-weight:700;font-size:clamp(30px,4.4vw,44px);line-height:1.05;letter-spacing:-.028em;margin:0}
+.standfirst{font-size:17px;color:var(--ink-2);max-width:62ch;margin:0}
+h2{font-family:var(--sans);font-weight:600;font-size:21px;letter-spacing:-.016em;margin:0}
+section{margin-top:48px;display:flex;flex-direction:column;gap:16px}
+p{margin:0}
+.sec-head{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--line);padding-bottom:9px}
+.sec-num{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--ink-3);text-transform:uppercase}
+code{font-family:var(--mono);font-size:.87em;background:var(--surface-3);padding:1px 5px;border-radius:2px;color:var(--ink)}
+
+.danger{background:var(--pwr-soft);border:1px solid var(--pwr);border-left-width:4px;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.danger .tag{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--pwr)}
+.danger p{font-size:15px;color:var(--ink-2);max-width:72ch}
+.danger b{color:var(--ink)}
+.caution{background:var(--warn-soft);border:1px solid var(--warn);border-left-width:4px;padding:18px 20px;display:flex;flex-direction:column;gap:8px}
+.caution .tag{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--warn)}
+.caution p{font-size:14.5px;color:var(--ink-2);max-width:72ch}
+
+figure{margin:0;display:flex;flex-direction:column;gap:12px}
+.canvas{background:var(--surface);border:1px solid var(--line);padding:20px;overflow-x:auto}
+.canvas svg{display:block;height:auto;max-width:100%}
+figcaption{font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--ink-3);max-width:78ch}
+figcaption b{color:var(--ink-2)}
+
+.legend{display:flex;flex-wrap:wrap;gap:14px;background:var(--surface-2);border:1px solid var(--line-2);padding:13px 16px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+.legend span{display:flex;align-items:center;gap:7px}
+.legend i{width:16px;height:3px;border-radius:2px;display:inline-block}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-family:var(--sans);font-size:13.5px}
+th{text-align:left;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);padding:11px 14px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line-2);color:var(--ink-2);vertical-align:top;line-height:1.45}
+td:first-child{color:var(--ink);font-weight:500}
+tr:last-child td{border-bottom:none}
+.gp{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+.bus{display:inline-block;font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:2px;letter-spacing:.05em}
+.bus.spi{background:color-mix(in srgb,var(--spi) 16%,transparent);color:var(--spi)}
+.bus.i2c{background:color-mix(in srgb,var(--i2c) 16%,transparent);color:var(--i2c)}
+.bus.uart{background:color-mix(in srgb,var(--uart) 16%,transparent);color:var(--uart)}
+.bus.pwr{background:var(--pwr-soft);color:var(--pwr)}
+
+.steps{display:flex;flex-direction:column;border:1px solid var(--line);background:var(--surface)}
+.step{display:grid;grid-template-columns:34px 1fr;gap:16px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
+.step:last-child{border-bottom:none}
+.step .n{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--spi)}
+.step .b{display:flex;flex-direction:column;gap:4px}
+.step .t{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--ink)}
+.step .d{font-size:13.5px;color:var(--ink-2);line-height:1.5}
+
+footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--ink-3);line-height:1.7;max-width:72ch}
+:focus-visible{outline:2px solid var(--spi);outline-offset:3px}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow"><span>Gate scanner</span><span class="sep"></span><span>ESP32 &middot; RC522 &middot; DS3231 &middot; SIM900</span></div>
+  <h1>Scanner Wiring</h1>
+  <p class="standfirst">Pin-for-pin against <code>scanner/include/pins.h</code>. Power first,
+  because that is what actually kills these builds &mdash; and the failure looks like a firmware
+  bug for days.</p>
+</header>
+
+<div class="danger">
+  <div class="tag">Read before connecting anything</div>
+  <p><b>The SIM900 draws up to 2&nbsp;A in transmit bursts at 3.4&ndash;4.4&nbsp;V.</b> It cannot
+  run from the ESP32's 3V3 pin, from the DevKit's 5V pin, or straight off USB. Give it its own
+  buck regulator to ~4&nbsp;V, with a <b>1000&ndash;2200&nbsp;µF electrolytic across its VCC/GND,
+  physically close to the module</b>, and short thick wires.</p>
+  <p>Without that capacitor the transmit burst collapses the rail, the ESP32 browns out and
+  resets, and you get random reboots that look exactly like a firmware fault. Being mains powered
+  removes the battery budget, not the current spike.</p>
+  <p><b>The RC522 is 3.3&nbsp;V only.</b> 5&nbsp;V destroys it, permanently and immediately.</p>
+</div>
+
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>Connection diagram</h2></div>
+  <div class="legend">
+    <span><i style="background:var(--spi)"></i>SPI &mdash; card reader</span>
+    <span><i style="background:var(--i2c)"></i>I²C &mdash; clock</span>
+    <span><i style="background:var(--uart)"></i>UART2 &mdash; SIM900</span>
+    <span><i style="background:var(--pwr)"></i>Power</span>
+    <span><i style="background:var(--pwr);height:0;border-top:3px dashed var(--pwr)"></i>Needs level shifting</span>
+  </div>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 1000 730" style="min-width:760px" role="img" aria-label="Scanner connection diagram. An ESP32 DevKit sits centre. On the left, an RC522 card reader connects over SPI using GPIO 5 for SS, 18 for SCK, 23 for MOSI, 19 for MISO and 4 for RST, powered from 3.3 volts. Below it, a buzzer on GPIO 25 and two LEDs on GPIO 26 and 27. On the upper right a DS3231 real time clock connects over I2C on GPIO 21 and 22. On the lower right a SIM900 modem connects over UART2, its TX to GPIO 16 and its RX to GPIO 17 through a level shifter, with PWRKEY on GPIO 32. A 5 volt supply feeds the ESP32 directly and a separate buck regulator drops it to 4 volts for the SIM900, with a large bulk capacitor across the SIM900 power rail.">
+        <defs>
+          <marker id="w-spi" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--spi)"/></marker>
+          <marker id="w-i2c" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--i2c)"/></marker>
+          <marker id="w-uart" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--uart)"/></marker>
+          <marker id="w-pwr" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--pwr)"/></marker>
+        </defs>
+
+        <!-- ESP32 -->
+        <rect x="390" y="150" width="220" height="360" rx="4" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="2"/>
+        <text x="500" y="180" text-anchor="middle" font-family="var(--sans)" font-size="15" font-weight="700" fill="var(--ink)">ESP32 DevKit v1</text>
+        <text x="500" y="199" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="var(--ink-3)">WROOM-32</text>
+        <line x1="410" y1="212" x2="590" y2="212" stroke="var(--line)" stroke-width="1"/>
+
+        <!-- RC522 -->
+        <rect x="55" y="150" width="185" height="190" rx="4" fill="var(--surface)" stroke="var(--spi)" stroke-width="1.5"/>
+        <text x="70" y="176" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">RC522</text>
+        <text x="70" y="194" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">13.56 MHz reader</text>
+        <text x="70" y="212" font-family="var(--mono)" font-size="10" font-weight="600" fill="var(--pwr)">3.3 V ONLY</text>
+
+        <!-- SPI lines -->
+        <line class="l" x1="240" y1="238" x2="384" y2="238" stroke="var(--spi)" stroke-width="2" marker-end="url(#w-spi)"/>
+        <line x1="240" y1="264" x2="384" y2="264" stroke="var(--spi)" stroke-width="2" marker-end="url(#w-spi)"/>
+        <line x1="240" y1="290" x2="384" y2="290" stroke="var(--spi)" stroke-width="2" marker-end="url(#w-spi)"/>
+        <line x1="384" y1="316" x2="240" y2="316" stroke="var(--spi)" stroke-width="2" marker-end="url(#w-spi)"/>
+        <line x1="240" y1="342" x2="384" y2="342" stroke="var(--spi)" stroke-width="2" marker-end="url(#w-spi)"/>
+        <text x="252" y="233" font-family="var(--mono)" font-size="10.5" fill="var(--spi)">SDA/SS &rarr; 5</text>
+        <text x="252" y="259" font-family="var(--mono)" font-size="10.5" fill="var(--spi)">SCK &rarr; 18</text>
+        <text x="252" y="285" font-family="var(--mono)" font-size="10.5" fill="var(--spi)">MOSI &rarr; 23</text>
+        <text x="252" y="311" font-family="var(--mono)" font-size="10.5" fill="var(--spi)">MISO &larr; 19</text>
+        <text x="252" y="337" font-family="var(--mono)" font-size="10.5" fill="var(--spi)">RST &rarr; 4</text>
+
+        <!-- feedback -->
+        <rect x="55" y="382" width="185" height="128" rx="4" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+        <text x="70" y="406" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">Buzzer + LEDs</text>
+        <text x="70" y="424" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">buzzer via transistor</text>
+        <text x="70" y="440" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">LEDs via 220 &#8486;</text>
+        <line x1="384" y1="462" x2="240" y2="462" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <line x1="384" y1="484" x2="240" y2="484" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <line x1="384" y1="506" x2="240" y2="506" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="252" y="458" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">buzzer &larr; 25</text>
+        <text x="252" y="480" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">LED ok &larr; 26</text>
+        <text x="252" y="502" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">LED err &larr; 27</text>
+
+        <!-- DS3231 -->
+        <rect x="760" y="150" width="190" height="112" rx="4" fill="var(--surface)" stroke="var(--i2c)" stroke-width="1.5"/>
+        <text x="775" y="176" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">DS3231 RTC</text>
+        <text x="775" y="194" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">fit the coin cell</text>
+        <text x="775" y="212" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">not optional &mdash; see below</text>
+        <line x1="616" y1="238" x2="754" y2="238" stroke="var(--i2c)" stroke-width="2" marker-end="url(#w-i2c)"/>
+        <line x1="616" y1="262" x2="754" y2="262" stroke="var(--i2c)" stroke-width="2" marker-end="url(#w-i2c)"/>
+        <text x="628" y="233" font-family="var(--mono)" font-size="10.5" fill="var(--i2c)">21 &rarr; SDA</text>
+        <text x="628" y="257" font-family="var(--mono)" font-size="10.5" fill="var(--i2c)">22 &rarr; SCL</text>
+
+        <!-- SIM900 -->
+        <rect x="760" y="320" width="190" height="164" rx="4" fill="var(--surface)" stroke="var(--uart)" stroke-width="1.5"/>
+        <text x="775" y="346" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">SIM900</text>
+        <text x="775" y="364" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">2G &middot; SMS uplink</text>
+        <text x="775" y="382" font-family="var(--mono)" font-size="10" font-weight="600" fill="var(--pwr)">own 4 V supply</text>
+        <line x1="754" y1="410" x2="616" y2="410" stroke="var(--uart)" stroke-width="2" marker-end="url(#w-uart)"/>
+        <line x1="616" y1="436" x2="754" y2="436" stroke="var(--pwr)" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#w-pwr)"/>
+        <line x1="616" y1="462" x2="754" y2="462" stroke="var(--uart)" stroke-width="2" marker-end="url(#w-uart)"/>
+        <text x="628" y="405" font-family="var(--mono)" font-size="10.5" fill="var(--uart)">16 &larr; TX</text>
+        <text x="628" y="431" font-family="var(--mono)" font-size="10.5" font-weight="600" fill="var(--pwr)">17 &rarr; RX  shift!</text>
+        <text x="628" y="457" font-family="var(--mono)" font-size="10.5" fill="var(--uart)">32 &rarr; PWRKEY</text>
+
+        <!-- power -->
+        <rect x="300" y="560" width="400" height="140" rx="4" fill="var(--pwr-soft)" stroke="var(--pwr)" stroke-width="1.5"/>
+        <text x="318" y="586" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">Power</text>
+        <text x="318" y="606" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">5 V 2 A supply &rarr; ESP32 VIN</text>
+        <text x="318" y="624" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">5 V &rarr; buck &rarr; 4 V &rarr; SIM900 VCC</text>
+        <text x="318" y="642" font-family="var(--mono)" font-size="10.5" font-weight="600" fill="var(--pwr)">1000&ndash;2200 µF across SIM900 VCC/GND</text>
+        <text x="318" y="660" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">ESP32 3V3 &rarr; RC522 + DS3231</text>
+        <text x="318" y="682" font-family="var(--mono)" font-size="10.5" font-weight="600" fill="var(--ink)">ALL GROUNDS COMMON</text>
+
+        <line x1="500" y1="516" x2="500" y2="554" stroke="var(--pwr)" stroke-width="2" marker-end="url(#w-pwr)"/>
+        <polyline points="700,630 855,630 855,490" fill="none" stroke="var(--pwr)" stroke-width="2.5" marker-end="url(#w-pwr)"/>
+        <polyline points="300,630 148,630 148,346" fill="none" stroke="var(--pwr)" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#w-pwr)"/>
+        <text x="862" y="560" font-family="var(--mono)" font-size="10" font-weight="600" fill="var(--pwr)">4 V, 2 A</text>
+        <text x="60" y="560" font-family="var(--mono)" font-size="10" fill="var(--pwr)">3.3 V</text>
+      </svg>
+    </div>
+    <figcaption><b>Note the two supplies.</b> The SIM900 does not share a rail with anything else,
+    and its ground still ties back to the ESP32's &mdash; a modem on a separate supply with a
+    floating ground will enumerate on the bench and then fail unpredictably in the field.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>Connection table</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Module</th><th>Module pin</th><th>ESP32</th><th>Bus</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>RC522</td><td>SDA / SS</td><td class="gp">GPIO 5</td><td><span class="bus spi">SPI</span></td><td>Boot strapping pin; idle-high SS is fine</td></tr>
+        <tr><td>RC522</td><td>SCK</td><td class="gp">GPIO 18</td><td><span class="bus spi">SPI</span></td><td>VSPI default</td></tr>
+        <tr><td>RC522</td><td>MOSI</td><td class="gp">GPIO 23</td><td><span class="bus spi">SPI</span></td><td></td></tr>
+        <tr><td>RC522</td><td>MISO</td><td class="gp">GPIO 19</td><td><span class="bus spi">SPI</span></td><td></td></tr>
+        <tr><td>RC522</td><td>RST</td><td class="gp">GPIO 4</td><td><span class="bus spi">SPI</span></td><td>Moved off 22 so I²C keeps its standard pair</td></tr>
+        <tr><td>RC522</td><td>3.3V / GND</td><td class="gp">3V3 / GND</td><td><span class="bus pwr">PWR</span></td><td><b>Never 5 V</b></td></tr>
+        <tr><td>DS3231</td><td>SDA</td><td class="gp">GPIO 21</td><td><span class="bus i2c">I²C</span></td><td>4.7 kΩ pull-ups if your board lacks them</td></tr>
+        <tr><td>DS3231</td><td>SCL</td><td class="gp">GPIO 22</td><td><span class="bus i2c">I²C</span></td><td></td></tr>
+        <tr><td>DS3231</td><td>VCC / GND</td><td class="gp">3V3 / GND</td><td><span class="bus pwr">PWR</span></td><td>Fit the backup cell, or offline taps get refused</td></tr>
+        <tr><td>SIM900</td><td>TXD</td><td class="gp">GPIO 16</td><td><span class="bus uart">UART2</span></td><td>~2.8 V out reads as HIGH; no shifting needed</td></tr>
+        <tr><td>SIM900</td><td>RXD</td><td class="gp">GPIO 17</td><td><span class="bus uart">UART2</span></td><td><b>Level-shift.</b> Its RX is not 3.3 V tolerant</td></tr>
+        <tr><td>SIM900</td><td>PWRKEY</td><td class="gp">GPIO 32</td><td><span class="bus uart">UART2</span></td><td>Hold low ~1.2 s to toggle power</td></tr>
+        <tr><td>SIM900</td><td>VCC / GND</td><td class="gp">4 V rail / GND</td><td><span class="bus pwr">PWR</span></td><td><b>Separate supply + bulk cap</b></td></tr>
+        <tr><td>Buzzer</td><td>signal</td><td class="gp">GPIO 25</td><td>&mdash;</td><td>Via NPN/MOSFET, not straight off the pin</td></tr>
+        <tr><td>LED green <i>(or RGB G leg)</i></td><td>anode</td><td class="gp">GPIO 26</td><td>&mdash;</td><td>220 Ω series</td></tr>
+        <tr><td>LED red <i>(or RGB R leg)</i></td><td>anode</td><td class="gp">GPIO 27</td><td>&mdash;</td><td>220 Ω series</td></tr>
+        <tr><td>RGB B leg</td><td>anode</td><td class="gp">GPIO 13</td><td>&mdash;</td><td>220 Ω series. Optional &mdash; set <code>LED_IS_RGB</code></td></tr>
+        <tr><td>RGB common</td><td>common leg</td><td class="gp">GND <i>or</i> 3V3</td><td><span class="bus pwr">PWR</span></td><td>Cathode &rarr; GND. Anode &rarr; 3V3 <b>and set <code>LED_COMMON_ANODE</code></b></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Level shifting GPIO&nbsp;17</h2></div>
+  <p class="prose">Only one line needs it. The SIM900's RX input is not 3.3&nbsp;V tolerant, and
+  driving it directly works on the bench for a while and then degrades the pin. A two-resistor
+  divider is enough for a one-way 9600-baud line.</p>
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 620 190" style="min-width:460px" role="img" aria-label="A resistor divider: ESP32 GPIO 17 through a 1 kilohm resistor to the SIM900 RX node, and from that node a 2.2 kilohm resistor to ground, giving about 2.3 volts.">
+        <text x="20" y="70" font-family="var(--mono)" font-size="12" fill="var(--ink)">ESP32</text>
+        <text x="20" y="88" font-family="var(--mono)" font-size="12" font-weight="600" fill="var(--ink)">GPIO 17</text>
+        <line x1="90" y1="80" x2="180" y2="80" stroke="var(--ink-2)" stroke-width="2"/>
+        <rect x="180" y="66" width="74" height="28" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="217" y="85" text-anchor="middle" font-family="var(--mono)" font-size="11.5" fill="var(--ink)">1 kΩ</text>
+        <line x1="254" y1="80" x2="390" y2="80" stroke="var(--ink-2)" stroke-width="2"/>
+        <circle cx="330" cy="80" r="4" fill="var(--ink-2)"/>
+        <line x1="330" y1="80" x2="330" y2="118" stroke="var(--ink-2)" stroke-width="2"/>
+        <rect x="296" y="118" width="68" height="28" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="330" y="137" text-anchor="middle" font-family="var(--mono)" font-size="11.5" fill="var(--ink)">2.2 kΩ</text>
+        <line x1="330" y1="146" x2="330" y2="166" stroke="var(--ink-2)" stroke-width="2"/>
+        <line x1="312" y1="166" x2="348" y2="166" stroke="var(--ink-2)" stroke-width="2.5"/>
+        <line x1="318" y1="172" x2="342" y2="172" stroke="var(--ink-2)" stroke-width="2"/>
+        <line x1="324" y1="178" x2="336" y2="178" stroke="var(--ink-2)" stroke-width="2"/>
+        <text x="400" y="70" font-family="var(--mono)" font-size="12" fill="var(--ink)">SIM900</text>
+        <text x="400" y="88" font-family="var(--mono)" font-size="12" font-weight="600" fill="var(--ink)">RXD</text>
+        <text x="400" y="112" font-family="var(--mono)" font-size="10.5" fill="var(--ok)">≈ 2.3 V &mdash; safe</text>
+      </svg>
+    </div>
+    <figcaption>3.3 V &times; 2.2/(1+2.2) &asymp; 2.3 V. The other direction needs nothing: the
+    SIM900's ~2.8 V output already reads as a logic HIGH on the ESP32.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">3b</span><h2>The 4-pin RGB LED</h2></div>
+  <p class="prose">Four pins means three colour legs and one common. Which kind you have decides
+  the wiring <em>and</em> a firmware constant, and getting it wrong inverts every cue &mdash; the
+  LED sits lit at idle and goes dark when something happens.</p>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 900 300" style="min-width:660px" role="img" aria-label="Two RGB LED wiring options. Common cathode: the three colour legs go through 220 ohm resistors to GPIO 27, 26 and 13, and the longest common leg goes to ground; the LED lights when a pin is HIGH. Common anode: the same three legs go to the same GPIOs through resistors, but the common leg goes to 3.3 volts and the LED lights when a pin is pulled LOW, which requires setting LED_COMMON_ANODE to true.">
+        <!-- common cathode -->
+        <text x="30" y="34" font-family="var(--mono)" font-size="11.5" font-weight="600" fill="var(--ok)">COMMON CATHODE &mdash; the default</text>
+        <text x="30" y="52" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">LED_COMMON_ANODE = false</text>
+        <g font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">
+          <text x="30" y="90">GPIO 27</text><text x="30" y="118">GPIO 26</text>
+          <text x="30" y="146">GPIO 13</text><text x="30" y="182">GND</text>
+        </g>
+        <g stroke="var(--ink-2)" stroke-width="1.8">
+          <line x1="95" y1="86" x2="150" y2="86"/><line x1="205" y1="86" x2="270" y2="86"/>
+          <line x1="95" y1="114" x2="150" y2="114"/><line x1="205" y1="114" x2="270" y2="114"/>
+          <line x1="95" y1="142" x2="150" y2="142"/><line x1="205" y1="142" x2="270" y2="142"/>
+          <line x1="95" y1="178" x2="270" y2="178"/>
+        </g>
+        <g fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.4">
+          <rect x="150" y="76" width="55" height="20"/><rect x="150" y="104" width="55" height="20"/><rect x="150" y="132" width="55" height="20"/>
+        </g>
+        <g font-family="var(--mono)" font-size="9.5" fill="var(--ink-2)" text-anchor="middle">
+          <text x="177" y="90">220</text><text x="177" y="118">220</text><text x="177" y="146">220</text>
+        </g>
+        <rect x="270" y="66" width="105" height="128" rx="8" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.6"/>
+        <g font-family="var(--mono)" font-size="10.5" text-anchor="start">
+          <text x="284" y="90" fill="#c8443c">R</text><text x="284" y="118" fill="#2f9e5e">G</text>
+          <text x="284" y="146" fill="#3b7fd6">B</text>
+          <text x="284" y="182" fill="var(--ink)" font-weight="600">com</text>
+        </g>
+        <text x="322" y="216" font-family="var(--mono)" font-size="10" text-anchor="middle" fill="var(--ok)">lights on HIGH</text>
+
+        <line x1="460" y1="40" x2="460" y2="240" stroke="var(--line)" stroke-width="1"/>
+
+        <!-- common anode -->
+        <text x="500" y="34" font-family="var(--mono)" font-size="11.5" font-weight="600" fill="var(--pwr)">COMMON ANODE &mdash; inverted</text>
+        <text x="500" y="52" font-family="var(--mono)" font-size="10" font-weight="600" fill="var(--pwr)">LED_COMMON_ANODE = true</text>
+        <g font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">
+          <text x="500" y="90">GPIO 27</text><text x="500" y="118">GPIO 26</text>
+          <text x="500" y="146">GPIO 13</text>
+          <text x="500" y="182" fill="var(--pwr)" font-weight="600">3V3</text>
+        </g>
+        <g stroke="var(--ink-2)" stroke-width="1.8">
+          <line x1="565" y1="86" x2="620" y2="86"/><line x1="675" y1="86" x2="740" y2="86"/>
+          <line x1="565" y1="114" x2="620" y2="114"/><line x1="675" y1="114" x2="740" y2="114"/>
+          <line x1="565" y1="142" x2="620" y2="142"/><line x1="675" y1="142" x2="740" y2="142"/>
+        </g>
+        <line x1="565" y1="178" x2="740" y2="178" stroke="var(--pwr)" stroke-width="1.8"/>
+        <g fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.4">
+          <rect x="620" y="76" width="55" height="20"/><rect x="620" y="104" width="55" height="20"/><rect x="620" y="132" width="55" height="20"/>
+        </g>
+        <g font-family="var(--mono)" font-size="9.5" fill="var(--ink-2)" text-anchor="middle">
+          <text x="647" y="90">220</text><text x="647" y="118">220</text><text x="647" y="146">220</text>
+        </g>
+        <rect x="740" y="66" width="105" height="128" rx="8" fill="var(--surface-2)" stroke="var(--pwr)" stroke-width="1.6"/>
+        <g font-family="var(--mono)" font-size="10.5">
+          <text x="754" y="90" fill="#c8443c">R</text><text x="754" y="118" fill="#2f9e5e">G</text>
+          <text x="754" y="146" fill="#3b7fd6">B</text>
+          <text x="754" y="182" fill="var(--pwr)" font-weight="600">com</text>
+        </g>
+        <text x="792" y="216" font-family="var(--mono)" font-size="10" text-anchor="middle" fill="var(--pwr)">lights on LOW</text>
+
+        <text x="450" y="268" font-family="var(--mono)" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">The longest leg is the common. Leg order is usually R &middot; com &middot; G &middot; B.</text>
+      </svg>
+    </div>
+    <figcaption><b>Telling them apart:</b> put the multimeter in diode mode, black probe on the
+    long leg. If a colour lights, it is <b>common cathode</b>. Nothing? Swap the probes &mdash; if
+    it lights with red on the long leg, it is <b>common anode</b>. No meter: common leg to GND
+    through 220&nbsp;Ω, touch another leg to 3V3. Lights &rarr; cathode.</figcaption>
+  </figure>
+
+  <div class="caution">
+    <div class="tag">Symptom of picking the wrong one</div>
+    <p>Every LED lit at idle and dark during cues &mdash; the exact inverse of what you expect.
+    The firmware is fine; flip <code>LED_COMMON_ANODE</code>. It is one constant because every
+    write goes through a single helper in <code>ui.cpp</code>, which is what stops this becoming a
+    hunt through a dozen call sites.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Colour</th><th>Means</th></tr></thead>
+      <tbody>
+        <tr><td>Green, steady</td><td>Online, queue empty &mdash; the gate is healthy</td></tr>
+        <tr><td>Green, chirp</td><td>Enrolled card accepted</td></tr>
+        <tr><td>Amber (R+G)</td><td>Card is not on the roster &mdash; still recorded</td></tr>
+        <tr><td>Blue, blinking</td><td>Buffering: taps stored, network down</td></tr>
+        <tr><td>Red, blinking</td><td><b>No usable clock.</b> Taps are being refused</td></tr>
+        <tr><td>Red, long tone</td><td>Could not store the tap &mdash; flash full</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>Bring-up, one module at a time</h2></div>
+  <p class="prose">Wiring all four then flashing the full firmware means any fault presents as
+  "nothing works". Bring them up in this order &mdash; each step is independently verifiable.</p>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><div class="b"><div class="t">ESP32 alone</div><div class="d">Blink GPIO 26 and 27, sound GPIO 25. Confirms the board, the supply and your feedback wiring before anything else can confuse the picture.</div></div></div>
+    <div class="step"><div class="n">02</div><div class="b"><div class="t">DS3231 next, not last</div><div class="d">Scan I²C and read the time. It is first because the scanner <em>refuses taps</em> without a trustworthy clock, so a missing RTC would otherwise look like a broken reader.</div></div></div>
+    <div class="step"><div class="n">03</div><div class="b"><div class="t">RC522</div><div class="d">Dump a card UID over serial. If you get all-zeros or <code>FFFFFFFF</code>, it is wiring or a 5 V mistake &mdash; not the card.</div></div></div>
+    <div class="step"><div class="n">04</div><div class="b"><div class="t">SIM900 on its own supply &mdash; <em>skippable</em></div><div class="d">Before any code: power it, watch the status LED, then <code>AT</code> &rarr; <code>OK</code>, <code>AT+CREG?</code> &rarr; <code>0,1</code> or <code>0,5</code>, <code>AT+CSQ</code> &ge; 10. Send one SMS by hand with <code>AT+CMGF=1</code> and <code>AT+CMGS</code>.
+    <br><br>Not fitted yet? Leave <code>SIM900_PRESENT = false</code> and skip to step 5. Taps are
+    still read, stored and delivered over Wi-Fi, and the <em>server</em> texts the parent instead
+    &mdash; nothing is lost and nothing is duplicated.</div></div></div>
+    <div class="step"><div class="n">05</div><div class="b"><div class="t">Full firmware</div><div class="d">Only now. Serial should print <code>scanner up | rtc=1 roster=N queued=0 sms=not fitted (server will send)</code>, or <code>sms=ready</code> once the modem is in.</div></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>Symptom &rarr; cause</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Symptom</th><th>Almost always</th></tr></thead>
+      <tbody>
+        <tr><td>ESP32 reboots when a text is sent</td><td><b>Missing or undersized bulk cap</b> on the SIM900 rail. The single most common fault on these builds</td></tr>
+        <tr><td>SIM900 never answers <code>AT</code></td><td>PWRKEY not pulsed, or TX/RX swapped. Try swapping them &mdash; it costs nothing</td></tr>
+        <tr><td>Answers <code>AT</code>, garbled replies</td><td>Baud mismatch, or GPIO 17 driven without the divider</td></tr>
+        <tr><td><code>AT+CREG?</code> returns <code>0,2</code> forever</td><td>Searching: no 2G coverage, SIM not registered under RA 11934, or load expired</td></tr>
+        <tr><td>Reader gives all-zero UIDs</td><td>RC522 on 5 V (likely dead), or MISO/MOSI swapped</td></tr>
+        <tr><td>Reader works cold, dies after a minute</td><td>RC522 sharing the SIM900's sagging rail. Put it on 3V3</td></tr>
+        <tr><td>Taps refused, red LED blinking</td><td>DS3231 missing or its coin cell is flat. By design &mdash; a wrong timestamp corrupts the register silently</td></tr>
+        <tr><td>Everything works on USB, fails on the enclosure supply</td><td>Supply cannot deliver the 2 A burst, or grounds are not common</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  Matches <code>scanner/include/pins.h</code> at the time of writing &mdash; if you change a pin,
+  change it there first and regenerate this. GPIO 5 is a boot strapping pin (fine for an
+  idle-high SS) and GPIO 12 is deliberately unused, since pulling it high at boot sets the flash
+  voltage and bricks startup.
+</footer>
+
+</div>

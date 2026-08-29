@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tracker</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='13' r='6' fill='%230b6e68'/%3E%3Ccircle cx='16' cy='13' r='11' fill='none' stroke='%230b6e68' stroke-width='2' opacity='.45'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/static/style.css?v=1787945593">
+<link rel="manifest" href="/static/manifest.json">
+</head>
+<body>
+
+<!-- SOS takes over the whole screen. A parent should understand the situation
+     from across the room, without reading. -->
+<div id="sos-banner" hidden>
+  <div class="sos-inner">
+    <div class="sos-text">
+      <strong id="sos-title">SOS</strong>
+      <span id="sos-detail"></span>
+    </div>
+    <button id="sos-ack">I've seen this</button>
+  </div>
+</div>
+
+<div id="signin" hidden>
+  <form id="signin-form">
+    <h2>Tracker</h2>
+    <input id="email" type="email" placeholder="you@example.com" autocomplete="username" required>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <p id="signin-error" class="err"></p>
+  </form>
+</div>
+
+<header>
+  <h1>Tracker</h1>
+  <div id="conn" class="chip">connecting…</div>
+  <button id="signout" class="linkish">Sign out</button>
+</header>
+
+<div id="toasts"></div>
+
+<main>
+  <aside id="sidebar">
+    <div id="devices"></div>
+    <section class="panel">
+      <h2>Places</h2>
+      <div id="places"></div>
+      <details id="place-add">
+        <summary>Name a place from what the tracker sees</summary>
+        <p class="hint">Tick the networks that are always there. Naming them means
+        the map says &ldquo;At school&rdquo; instead of drawing a circle &mdash; and these
+        networks stop being sent to the geolocation provider.</p>
+        <div id="ap-list" class="ap-list"></div>
+        <div class="place-form">
+          <input id="place-name" type="text" placeholder="School" maxlength="40">
+          <select id="place-kind">
+            <option value="school">School</option>
+            <option value="home">Home</option>
+            <option value="other">Other</option>
+          </select>
+          <button id="place-save">Save place</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>At school</h2>
+      <ul id="attendance"><li class="muted">No taps yet</li></ul>
+    </section>
+  </aside>
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <!-- Freshness, over the map. The single most important thing to know about
+         a position is how old it is, so it should never require reading the
+         sidebar. -->
+    <div id="freshness" hidden>
+      <span class="pip"></span>
+      <div class="fresh-text">
+        <strong id="fresh-age">—</strong>
+        <span id="fresh-detail"></span>
+      </div>
+    </div>
+
+    <!-- Trail scrubber. The day is the unit a parent thinks in, so the range
+         is minutes-of-day and the presets are the parts of a school day. -->
+    <div id="scrub" hidden>
+      <div class="scrub-head">
+        <strong id="scrub-range">—</strong>
+        <div class="scrub-presets">
+          <button data-preset="all">All day</button>
+          <button data-preset="am">Morning</button>
+          <button data-preset="pm">Afternoon</button>
+          <button data-preset="last">Last hour</button>
+        </div>
+      </div>
+      <div class="scrub-track">
+        <input id="scrub-from" type="range" min="0" max="1439" value="0" step="5" aria-label="Trail start time">
+        <input id="scrub-to"   type="range" min="0" max="1439" value="1439" step="5" aria-label="Trail end time">
+      </div>
+      <div class="scrub-foot"><span id="scrub-count">—</span></div>
+    </div>
+
+    <div id="map-legend">
+      <span><i class="k gnss"></i>GPS</span>
+      <span><i class="k wifi"></i>Wi-Fi</span>
+      <span><i class="k ble_anchor"></i>Beacon</span>
+      <span><i class="k cell"></i>Cell</span>
+    </div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/app.js?v=1787945593"></script>
+</body>
+</html>

@@ -12,6 +12,7 @@
 #include "buzzer.h"
 #include <avr/wdt.h>
 #include <string.h>
+#include <stdlib.h>
 
 // Some Uno clone bootloaders leave the watchdog armed with a short timeout;
 // without an early disable, nothing pets it and the board resets partway
@@ -44,6 +45,7 @@ void wdtEarlyDisable(void) {
 // (card.h) by card_writer/.
 
 static uint32_t s_lastClock = 0;
+static uint32_t s_lastSmsPoll = 0;
 static bool     s_awaitingSmsDone = false;   // an SMS was just enqueued — waiting
                                               // for smsq to actually send it so the
                                               // LCD can stop showing "Sending..."
@@ -55,6 +57,22 @@ static uint32_t s_idleAt = 0;                // when to revert the LCD to Status
 static void showResult(Status s, const char* detail) {
     display::show(s, detail);
     s_idleAt = millis() + STATUS_HOLD_MS;
+}
+
+// Checks for one unread SMS and forwards it over serial — see modem.h's
+// pollSms() and dashboard/app.py, the only consumer. Never more than one
+// message per call, same discipline as smsq::service()'s one send —
+// bounded, so this can't turn into an unbounded blocking run if several
+// messages arrive at once (the next one is picked up on the next timer
+// tick instead).
+static void pollIncomingSms() {
+    char from[SMS_NUMBER_MAX];
+    char text[SMS_RX_BODY_MAX];
+    if (!modem::pollSms(from, sizeof from, text, sizeof text)) return;
+    // Machine-parseable, same "TAP " convention as handleTap()'s line —
+    // dashboard/app.py's parse_line() keys off the "SMS " prefix.
+    Serial.print(F("SMS from=")); Serial.print(from);
+    Serial.print(F(" text="));    Serial.println(text);
 }
 
 // Handles one tap if the reader has one ready. A standalone function only
@@ -71,6 +89,15 @@ static void handleTap() {
         // detected.
         s_idleAt = 0;
 
+        // Declared out here (not inside the else block below) so the TAP
+        // line printed below — the web dashboard's only source for a
+        // human name, since the EEPROM ring never stores one, see store.h
+        // — can report it regardless of which branch ran. Stays hasCardData
+        // false / cd unset if the RTC-missing branch runs, which is
+        // correct: no card was read in that case.
+        CardData cd;
+        bool hasCardData = false;
+
         if (!clockw::ok()) {
             buzzer::play(Cue::Error);
             showResult(Status::Error, "No RTC clock");
@@ -79,8 +106,7 @@ static void handleTap() {
             // Read once, up front, while the card is still SELECTED
             // (reader::poll() deferred the halt exactly so this could
             // happen) — this MUST run before reader::release() below.
-            CardData cd;
-            bool hasCardData = card::read(cd);
+            hasCardData = card::read(cd);
             const char* label = hasCardData ? cd.name : t.uid;
 
             store::push(t.uid, t.recorded_at, hasCardData);   // local audit trail — always logged, see store.h
@@ -104,7 +130,12 @@ static void handleTap() {
             reader::release();
         }
 
-        Serial.print(F("tap ")); Serial.print(t.uid);
+        // Machine-parseable (also human-readable) — the web dashboard's
+        // serial reader keys off the "TAP " prefix and these key=value
+        // tokens. See dashboard/app.py's parse_line().
+        Serial.print(F("TAP uid=")); Serial.print(t.uid);
+        Serial.print(F(" at="));     Serial.print(t.recorded_at);
+        Serial.print(F(" name="));   Serial.print(hasCardData ? cd.name : "-");
         Serial.print(F(" logged=")); Serial.println((unsigned)store::depth());
     } else if (reader::sawDuplicate()) {
         buzzer::play(Cue::Duplicate);
@@ -147,8 +178,29 @@ static void handleConsoleLine() {
     } else if (strcmp(s_line, "SIG") == 0) {
         Serial.print(F("registered=")); Serial.print(modem::registered());
         Serial.print(F(" csq="));       Serial.println(modem::signalQuality());
+    } else if (strcmp(s_line, "CLK") == 0) {
+        Serial.print(F("rtc_before=")); Serial.println(clockw::now());
+        uint32_t epoch;
+        bool ok = modem::syncClockFromNetwork(epoch);
+        Serial.print(F("AT+CCLK sync ")); Serial.print(ok ? F("OK epoch=") : F("FAILED"));
+        if (ok) { Serial.println(epoch); clockw::setFromEpoch(epoch); }
+        Serial.print(F("rtc_after=")); Serial.println(clockw::now());
+    } else if (strncmp(s_line, "SETTIME ", 8) == 0) {
+        // Manual fallback for a carrier that doesn't push NITZ time over
+        // AT+CCLK? — confirmed on real hardware (2026-08-31): registered
+        // fine (AT+CREG stat=1), but CLK's own AT+CCLK? sync FAILED every
+        // time, leaving the DS1302 stuck on whatever it was last set to
+        // (a stale test value, in this case genuinely 64 years wrong) with
+        // no automatic way to self-correct. dashboard/app.py's "Set clock"
+        // action sends this with the laptop's own accurate wall-clock UTC
+        // epoch. UNIX epoch, UTC — same unit setFromEpoch() already takes
+        // from the network path, so nothing downstream needs to know which
+        // source set it.
+        uint32_t epoch = (uint32_t)strtoul(s_line + 8, nullptr, 10);
+        clockw::setFromEpoch(epoch);
+        Serial.print(F("OK: rtc set to ")); Serial.println(clockw::now());
     } else if (s_lineLen) {
-        Serial.println(F("ERR: commands are DUMP, CLEAR, SIG"));
+        Serial.println(F("ERR: commands are DUMP, CLEAR, SIG, CLK, SETTIME <epoch>"));
     }
 }
 
@@ -243,5 +295,10 @@ void loop() {
         s_lastClock = now;
         uint32_t epoch;
         if (modem::syncClockFromNetwork(epoch)) clockw::setFromEpoch(epoch);
+    }
+
+    if (now - s_lastSmsPoll >= SMS_POLL_MS) {
+        s_lastSmsPoll = now;
+        pollIncomingSms();
     }
 }

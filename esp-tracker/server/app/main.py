@@ -4,10 +4,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 import pyotp
 
-from . import db, auth, alerts, geolocate, sms, relay, attendance as att
+from . import db, auth, alerts, geolocate, sms, relay, attendance as att, tracker_sms
 from .config import STATIC, STALE_AFTER_S, SMS_CMD_SECRET, COOKIE_SECURE, RELAY_SWEEP_S
 from .hub import hub
-from .models import EventBatch, TapBatch, LoginRequest, AckRequest, CreatePlace
+from .models import EventBatch, TapBatch, LoginRequest, AckRequest, CreatePlace, RelayedSms
 
 app = FastAPI(title="Child Tracker")
 
@@ -165,6 +165,55 @@ async def ingest_taps(batch: TapBatch, device=Depends(auth.current_device)):
 
     db.execute("UPDATE devices SET last_seen_at=? WHERE id=?", (now, device["id"]))
     return {"accepted": accepted}
+
+
+@app.post("/api/relay/sms")
+async def relay_sms(body: RelayedSms, device=Depends(auth.current_device)):
+    """A scanner forwarding one SMS its own modem received — see
+    scanner-uno/sms_scanner/src/modem.h's pollSms() and
+    scanner-uno/dashboard/app.py. Currently the only thing this recognises
+    is a tracker's routine "LOC ..." report (see tracker_sms.py) — this is
+    NOT a general inbound-SMS webhook; anything else texted to a scanner's
+    number is accepted (so the scanner doesn't need to guess what matters)
+    but otherwise ignored.
+
+    Authenticated as the SCANNER (its own bearer token, same as
+    ingest_taps) — that proves WHICH scanner relayed this, not that the SMS
+    body itself is genuine. tracker_sms.parse()'s embedded code is the
+    thing that proves a tracker (not a stranger texting the scanner's
+    number) actually composed this payload; the two checks are deliberately
+    separate concerns.
+    """
+    if device["kind"] != "scanner":
+        raise HTTPException(403, "not a scanner")
+    now = _now()
+    received_at = body.received_at or now
+
+    parsed = tracker_sms.parse(body.text)
+    if not parsed:
+        return {"ok": True, "handled": False}
+    source, lat, lon, acc, recorded_at = parsed
+
+    tracker = db.one("SELECT id FROM devices WHERE msisdn=? AND kind='tracker' AND active=1",
+                     (body.sender,))
+    if not tracker:
+        return {"ok": True, "handled": False}   # unrecognised sender — don't leak which numbers ARE known
+
+    event_id = f"{tracker['id']}-{recorded_at}"   # idempotent: a relay retry can't double-insert
+    try:
+        db.execute(
+            """INSERT INTO locations (event_id,device_id,lat,lon,accuracy_m,source,
+                                      recorded_at,received_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (event_id, tracker["id"], lat, lon, acc, source, recorded_at, received_at))
+    except sqlite3.IntegrityError:
+        return {"ok": True, "handled": True, "duplicate": True}
+
+    db.execute("UPDATE devices SET last_seen_at=? WHERE id=?", (received_at, tracker["id"]))
+    await hub.broadcast("location", {
+        "device_id": tracker["id"], "lat": lat, "lon": lon,
+        "accuracy_m": acc, "source": source, "recorded_at": recorded_at})
+    return {"ok": True, "handled": True}
 
 
 async def notify_tap(tap, card, direction: str) -> None:

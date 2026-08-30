@@ -46,20 +46,21 @@ static bool atCmd(const char* cmd, const char* expect = "OK", uint32_t timeoutMs
     return atWait(expect, timeoutMs);
 }
 
-// Reads raw bytes into buf until `token` is seen or timeoutMs elapses —
-// used by registered()/syncClockFromNetwork()/signalQuality() to capture a
-// reply line for parsing, same pattern as ../src/modem.cpp's copies of this
-// logic (kept separate per-caller there too, rather than one shared
-// helper, to keep each caller's buffer size and exit condition obvious at
-// the call site rather than threaded through a shared function).
-static uint8_t readUntil(char* buf, size_t cap, char stopChar, uint32_t timeoutMs) {
+// Reads raw bytes into buf for the WHOLE timeoutMs window (or until buf is
+// full) — used by registered()/signalQuality() to capture a reply for
+// parsing, same pattern already proven by syncClockFromNetwork() below.
+// Deliberately does NOT stop at the first '\n': the SIM800L's replies to
+// AT+CREG?/AT+CSQ both start with a blank "\r\n" before the line that
+// actually matters ("+CREG: 0,1", "+CSQ: 14,99") — an earlier version of
+// this function stopped there, which meant registered()/signalQuality()
+// never saw the real content and reported the modem as unreachable when it
+// was answering fine (confirmed by real SMS sends working throughout).
+static uint8_t readFor(char* buf, size_t cap, uint32_t timeoutMs) {
     uint8_t n = 0;
     uint32_t deadline = millis() + timeoutMs;
     while ((int32_t)(millis() - deadline) < 0 && n < cap - 1) {
         if (!s_sim.available()) { idleTick(); continue; }
-        char c = (char)s_sim.read();
-        buf[n++] = c;
-        if (c == stopChar) break;
+        buf[n++] = (char)s_sim.read();
     }
     buf[n] = 0;
     return n;
@@ -86,8 +87,8 @@ bool registered() {
     while (s_sim.available()) s_sim.read();
     atSend("AT+CREG?");
     // Response looks like: +CREG: 0,1  (n,stat) — stat 1=home, 5=roaming.
-    char buf[24];
-    readUntil(buf, sizeof buf, '\n', 2000);
+    char buf[32];
+    readFor(buf, sizeof buf, 2000);
     char* p = strstr(buf, "+CREG:");
     if (!p) return false;
     char* comma = strchr(p, ',');
@@ -100,8 +101,8 @@ bool syncClockFromNetwork(uint32_t& epochOut) {
     while (s_sim.available()) s_sim.read();
     atSend("AT+CCLK?");
     // Response looks like: +CCLK: "24/08/29,14:03:11+32"
-    char buf[40];
-    readUntil(buf, sizeof buf, '\n', 3000);
+    char buf[48];
+    readFor(buf, sizeof buf, 3000);
     char* q = strchr(buf, '"');
     if (!q) return false;
     int yy, mo, dd, hh, mi, ss, tzQuarter;
@@ -137,12 +138,59 @@ bool sendSms(const char* number, const char* text) {
 int8_t signalQuality() {
     while (s_sim.available()) s_sim.read();
     atSend("AT+CSQ");
-    char buf[24];
-    readUntil(buf, sizeof buf, '\n', 2000);
+    char buf[32];
+    readFor(buf, sizeof buf, 2000);
     char* p = strstr(buf, "+CSQ:");
     if (!p) return -1;
     int csq = atoi(p + 5);
     return (csq == 99) ? (int8_t)-1 : (int8_t)csq;
+}
+
+bool pollSms(char* fromOut, size_t fromCap, char* textOut, size_t textCap) {
+    while (s_sim.available()) s_sim.read();
+    atSend("AT+CMGL=\"REC UNREAD\"");
+    // A reply listing one message looks like:
+    //   +CMGL: 1,"REC UNREAD","+639171234567",,"24/08/29,14:03:11+32"
+    //   <message body>
+    //   OK
+    // Sized for one header line plus a near-full single-SMS body
+    // (SMS_RX_BODY_MAX) plus the trailing OK — see that constant's
+    // comment in config.h.
+    char buf[200];
+    readFor(buf, sizeof buf, 3000);
+
+    char* p = strstr(buf, "+CMGL:");
+    if (!p) return false;   // nothing unread
+    int index = atoi(p + 6);
+
+    // The header has THREE quoted fields before the sender: "REC UNREAD"
+    // is the first; the sender's number is the second.
+    char* q = strchr(p, '"');
+    if (!q) return false;
+    q = strchr(q + 1, '"');   // end of "REC UNREAD"
+    if (!q) return false;
+    q = strchr(q + 1, '"');   // opening quote of the sender number
+    if (!q) return false;
+    q++;
+    size_t n = 0;
+    while (*q && *q != '"' && n < fromCap - 1) fromOut[n++] = *q++;
+    fromOut[n] = 0;
+
+    // Body is the line right after the header's terminating CRLF — text
+    // mode never wraps a single-part SMS across more lines than that.
+    char* bodyStart = strstr(p, "\r\n");
+    if (!bodyStart) return false;
+    bodyStart += 2;
+    n = 0;
+    while (*bodyStart && *bodyStart != '\r' && *bodyStart != '\n' && n < textCap - 1) textOut[n++] = *bodyStart++;
+    textOut[n] = 0;
+
+    // Delete it so the next poll doesn't see the same message again.
+    char cmd[16];
+    snprintf(cmd, sizeof cmd, "AT+CMGD=%d", index);
+    atCmd(cmd, "OK", 2000);
+
+    return true;
 }
 
 }

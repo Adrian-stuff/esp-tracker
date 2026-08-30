@@ -54,6 +54,15 @@ static constexpr uint8_t  SMS_BODY_MAX        = 80;
 static constexpr uint8_t  SMS_NUMBER_MAX      = 16;
 static constexpr uint32_t SMS_SEND_TIMEOUT_MS = 12000;
 
+// Incoming SMS (modem::pollSms(), forwarded to the web dashboard — see
+// main.cpp/dashboard/app.py). 140, not the full 160 GSM-7 max: a single-
+// slot SMS_BODY_MAX-sized buffer is fine for OUTGOING messages this
+// firmware composes itself, but an inbound message from an admin's phone
+// isn't length-limited by us — 140 keeps a genuine margin below 160
+// without paying for the full worst case on a chip this RAM-constrained.
+static constexpr uint8_t  SMS_RX_BODY_MAX     = 140;
+static constexpr uint32_t SMS_POLL_MS         = 5000;
+
 // ---------------------------------------------------------------------------
 // Clock — disciplined from the cellular network's NITZ time (AT+CCLK?),
 // which needs only basic registration, not a GPRS/data attach (see

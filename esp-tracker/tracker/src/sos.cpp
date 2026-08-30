@@ -5,6 +5,8 @@
 #include "feedback.h"
 #include "../include/pins.h"
 #include "../include/config.h"
+#include <Arduino.h>
+#include <cstdio>
 
 namespace sos {
 

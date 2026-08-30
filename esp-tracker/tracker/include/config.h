@@ -85,6 +85,10 @@ static constexpr uint32_t FIX_BUDGET_GNSS_MS  = 30000;  // never completes indoo
 // ---------------------------------------------------------------------------
 // Network. SIM800L is 2G-only: verify AT+CREG? on the child's real route
 // before building anything else (README "2G availability").
+//
+// Smart — this tracker and the scanner both run Smart SIMs for the
+// presentation. "internet" is Smart's confirmed APN (their own SET-to-211
+// auto-provisioning agrees, not just a third-party list).
 // ---------------------------------------------------------------------------
 #define APN            "internet"
 #define APN_USER       ""
@@ -133,6 +137,43 @@ static constexpr uint32_t CLOCK_MAX_SKEW_S   = 300;
 // The server de-duplicates the SMS against the HTTP event by id.
 #define SOS_SMS_PRIMARY   "+639000000000"
 #define SOS_SMS_SECONDARY "+639000000000"
+
+// UPDATE (2026-08-31): "SMS as out-of-band, GPRS as the real uplink" above
+// described the intended design, not a working one — this tracker's own
+// modem.cpp had never actually implemented GPRS (attach()/postJson() were
+// bare TODOs returning false). Rather than build that stack anyway, see
+// scanner-uno/PLAN.md §1b's GPRS section first: the SAME SIM800L hardware
+// on the gate scanner had its GPRS attach re-tested on real hardware and
+// root-caused to the Philippines' NTC-mandated nationwide 2G/3G shutdown
+// (complete by 2026-12-31) — not an APN or signal problem fixable by
+// config. This tracker uses the identical 2G-only module, so it inherits
+// the same ceiling. Routine location reporting (report.h) goes over SMS
+// from the start, not GPRS — see SCANNER_SMS_NUMBER below. SOS and the
+// "locate now" downlink above are UNCHANGED by this: they were always SMS.
+//
+// The scanner's own SIM800L is the relay: it already has to run its own
+// modem for attendance SMS (see scanner-uno/sms_scanner/), so reusing its
+// number as this tracker's report destination needs no second physical SMS
+// receiver anywhere in the system. The scanner forwards whatever it
+// receives to its own laptop-side dashboard (scanner-uno/dashboard/),
+// which relays parseable reports on to the server — see report.h and
+// server/app/tracker_sms.py for the wire format both ends must agree on
+// byte for byte.
+#define SCANNER_SMS_NUMBER "change-me"
+
+// Adaptive report cadence — see motion.h for the state machine driving
+// this. Left at the original design's numbers even though every report is
+// now a real SMS, not a free HTTP call: ~700 texts/day while moving is a
+// real, accepted recurring cost for this deployment, not an oversight —
+// revisit these two constants first if that cost ever needs to come down,
+// nothing else about report.cpp depends on the exact values.
+static constexpr uint32_t REPORT_INTERVAL_MOVING_MS     = 2UL * 60UL * 1000UL;
+static constexpr uint32_t REPORT_INTERVAL_STATIONARY_MS = 30UL * 60UL * 1000UL;
+
+// How long modem::sendSms() waits for the SIM800L's final "OK" after the
+// message body — same figure as scanner-uno/sms_scanner's SMS_SEND_TIMEOUT_MS,
+// confirmed reasonable against a real SMS send on that identical modem.
+static constexpr uint32_t SMS_SEND_TIMEOUT_MS = 12000;
 
 #define CHILD_NAME "Ana"
 

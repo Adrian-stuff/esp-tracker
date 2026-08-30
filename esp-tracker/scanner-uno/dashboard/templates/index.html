@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gate Attendance — scanner-uno</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; margin-bottom: 0.2rem; }
+  .status { font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .dot { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; margin-right: 0.4em; }
+  .dot.on { background: #2a7; }
+  .dot.off { background: #c44; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.4em 0.6em; border-bottom: 1px solid #8883; }
+  th { font-weight: 600; opacity: 0.7; }
+  .name { font-weight: 600; }
+  .noname { opacity: 0.55; font-style: italic; }
+  .empty { opacity: 0.5; font-style: italic; padding: 0.6em; }
+  section h2 { font-size: 1rem; opacity: 0.8; }
+  button { font: inherit; padding: 0.3em 0.8em; border-radius: 6px; border: 1px solid #8886; background: transparent; cursor: pointer; }
+  button:hover { background: #8882; }
+  .statusRow { display: flex; align-items: center; gap: 1rem; }
+</style>
+</head>
+<body>
+  <h1>Gate Attendance</h1>
+  <div class="statusRow">
+    <div class="status">
+      <span id="dot" class="dot off"></span>
+      <span id="statusText">connecting…</span>
+    </div>
+    <button id="setClockBtn" onclick="setClock()">Set scanner clock to now</button>
+    <span id="clockMsg" class="status"></span>
+  </div>
+
+  <section>
+    <h2>Attendance</h2>
+    <table id="attendanceTable">
+      <thead><tr><th>Time</th><th>Name</th><th>UID</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Messages received</h2>
+    <table id="messagesTable">
+      <thead><tr><th>Time</th><th>From</th><th>Text</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+<script>
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function renderAttendance(rows) {
+  const tbody = document.querySelector("#attendanceTable tbody");
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">No taps yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${escapeHtml(r.time_ph)}</td>
+      <td>${r.name ? `<span class="name">${escapeHtml(r.name)}</span>` : '<span class="noname">not enrolled</span>'}</td>
+      <td><code>${escapeHtml(r.uid)}</code></td>
+    </tr>`).join("");
+}
+
+function renderMessages(rows) {
+  const tbody = document.querySelector("#messagesTable tbody");
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">No messages yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${escapeHtml(r.received_at)}</td>
+      <td><code>${escapeHtml(r.from)}</code></td>
+      <td>${escapeHtml(r.text)}</td>
+    </tr>`).join("");
+}
+
+async function poll() {
+  try {
+    const res = await fetch("/api/events");
+    const data = await res.json();
+    const dot = document.getElementById("dot");
+    const text = document.getElementById("statusText");
+    dot.className = "dot " + (data.connected ? "on" : "off");
+    text.textContent = data.connected ? `connected — ${data.port}` : "scanner not connected";
+    renderAttendance(data.attendance);
+    renderMessages(data.messages);
+  } catch (e) {
+    document.getElementById("statusText").textContent = "dashboard server unreachable";
+  }
+}
+
+async function setClock() {
+  const msg = document.getElementById("clockMsg");
+  msg.textContent = "setting…";
+  try {
+    const res = await fetch("/api/set_clock", { method: "POST" });
+    const data = await res.json();
+    msg.textContent = data.sent ? "clock set" : "scanner not connected";
+  } catch (e) {
+    msg.textContent = "failed";
+  }
+  setTimeout(() => { msg.textContent = ""; }, 3000);
+}
+
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>

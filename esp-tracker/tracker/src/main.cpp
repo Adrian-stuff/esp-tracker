@@ -9,6 +9,7 @@
 #include "motion.h"
 #include "feedback.h"
 #include "notify.h"
+#include "report.h"
 
 // Tracker — ESP32 + SIM800L + NEO-6M + button.
 //
@@ -41,10 +42,12 @@ void setup() {
     motion::begin();
     notify::begin();
     modem::begin();
+    report::begin();
 
-    // Clock first: TLS validation needs a roughly-correct time and the ESP32
-    // has no RTC. Without this every handshake fails for no obvious reason.
-    modem::attach();
+    // AT+CCLK? works over plain network registration — no GPRS attach
+    // needed (see modem.cpp's file header for why that path is dropped).
+    // The ESP32 has no RTC of its own, so this is the only clock source;
+    // report.cpp's recorded_at and sos.cpp's timestamps are wrong without it.
     modem::syncClockFromNetwork();
 }
 
@@ -53,6 +56,7 @@ void loop() {
     sos::service();
     locator::service();
     motion::service();
+    report::service();
     modem::closeIdle();
 
     // TODO: adaptive cadence (PLAN.md 4.1), driven by motion::state():

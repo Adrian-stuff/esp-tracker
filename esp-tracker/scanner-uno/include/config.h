@@ -45,18 +45,30 @@ static constexpr uint16_t API_PORT = 80;
 #define GPRS_USER ""
 #define GPRS_PASS ""
 
-// GPRS attach is confirmed failing on the current bench signal (see
-// PLAN.md §1b's "Offline-fallback RFID card format" section) — every
-// attempt still costs real time before failing (CIPSHUT+CGATT+CSTT+CIICR+
-// CIFSR, worst case ~38s if it gets as far as CIICR's own 20s timeout),
-// and that runs at boot (net::refreshRosterIfStale()) and every
-// DRAIN_INTERVAL_MS once anything is queued (net::drain()) — either one
-// blocks the WHOLE scanner (no taps, no LCD updates) for the entire
-// attempt, repeatedly, which is what "stuck, doesn't scan" actually was.
-// SMS sending does NOT need this — AT+CMGS works over basic network
-// registration, independent of the GPRS/CIPSTART data path. Flip this
-// back to true once the signal/APN issue is actually resolved; nothing
-// else needs to change.
+// GPRS attach re-tested against real hardware (2026-08-31), then root-caused
+// for good — this is a CLOSED question now, not an open one:
+//
+//   1. AT+CGATT=1 fails immediately, before APN/CSTT is even reached —
+//      already ruled out as a config bug (modem was confirmed registered,
+//      AT+CREG stat=1, with real if weak signal, AT+CSQ ~3).
+//   2. The SIM's data plan itself is NOT the blocker — mobile data was
+//      confirmed working on a phone with this same SIM.
+//   3. That phone's network-mode settings don't even offer a 2G-only
+//      option anymore.
+//   4. The Philippines' NTC has a MANDATED nationwide 2G/3G shutdown,
+//      area-by-area, complete by 2026-12-31 (Smart already dropped 3G in
+//      Sept 2025) — see PLAN.md §1b's GPRS section for sources.
+//
+// The SIM800L is 2G-ONLY hardware — no 3G/4G fallback exists for it to use
+// instead. All four findings point the same way: 2G data is being (or has
+// been) switched off in this area as a matter of national policy, not a
+// bug anywhere in this codebase. GPRS_ENABLED stays false PERMANENTLY for
+// this hardware — re-enabling it is not a "try again later" situation.
+// SMS (AT+CMGS/CMGL, plain network registration, not GPRS) is unaffected
+// and is the durable answer for this module, not a stopgap — see
+// sms_scanner/, which is the long-term firmware for this board. A working
+// HTTP/ingest path on this hardware would require different cellular
+// hardware entirely (a 3G/4G-capable module), not a firmware change.
 static constexpr bool GPRS_ENABLED = false;
 
 // ---------------------------------------------------------------------------

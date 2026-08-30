@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <stddef.h>
 
 // SIM800L — SMS + clock only. This is the one deliberate difference from
 // ../src/modem.h: that file also drives AT+CIPSTART/CIPSEND/+IPD framing
@@ -25,4 +26,13 @@ namespace modem {
 
     bool sendSms(const char* number, const char* text);
     int8_t signalQuality();                          // AT+CSQ, -1 unknown
+
+    // Checks for ONE unread SMS (AT+CMGL="REC UNREAD") and, if found,
+    // fills fromOut/textOut and deletes it from the SIM (AT+CMGD) so the
+    // next poll doesn't see it again — never more than one per call, same
+    // "bounded per call" discipline as smsq::service()'s one send. Returns
+    // false (buffers untouched) if nothing unread. See main.cpp's
+    // SMS_POLL_MS timer and dashboard/app.py, the only consumer of what
+    // this forwards.
+    bool pollSms(char* fromOut, size_t fromCap, char* textOut, size_t textCap);
 }

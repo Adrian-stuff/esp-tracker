@@ -62,6 +62,17 @@ class LoginRequest(BaseModel):
 class AckRequest(BaseModel):
     note: Optional[str] = None
 
+class RelayedSms(BaseModel):
+    """One SMS a scanner's own SIM800L received and is relaying — see
+    scanner-uno/sms_scanner/src/modem.h's pollSms() and
+    scanner-uno/dashboard/app.py, the only caller of the endpoint this
+    feeds. Not necessarily a location report: anything texted to a
+    scanner's number arrives here verbatim — see tracker_sms.parse() for
+    what's actually recognised and acted on."""
+    sender: str = Field(min_length=5, max_length=20)
+    text: str = Field(min_length=1, max_length=200)
+    received_at: Optional[int] = None   # server uses now() if the relay didn't send one
+
 class CreatePlace(BaseModel):
     """A parent naming a set of networks: 'these are school'."""
     name: str = Field(min_length=1, max_length=40)

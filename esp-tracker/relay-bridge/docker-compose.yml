@@ -1,0 +1,16 @@
+services:
+  relay:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      # Host only, no scheme/path — matches how the template uses it both
+      # in proxy_pass's URL and in the Host header. Override at deploy time
+      # with `SUPABASE_HOST=xxxx.supabase.co docker compose up -d`, or put
+      # it in a .env file next to this compose file — don't edit this
+      # default in place if you can help it, so a git pull doesn't clobber
+      # a real deployment's config.
+      SUPABASE_HOST: "${SUPABASE_HOST:-YOUR-REF.supabase.co}"
+    volumes:
+      - ./templates:/etc/nginx/templates:ro

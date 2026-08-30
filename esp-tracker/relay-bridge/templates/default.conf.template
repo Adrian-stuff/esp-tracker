@@ -1,0 +1,52 @@
+# Plain-HTTP -> HTTPS reverse proxy for MCUs that can't speak TLS (the
+# scanner-uno's SIM800L — see scanner-uno/include/config.h). Holds no
+# secrets: Supabase Edge Functions already validate DEVICE_TOKEN and hold
+# their own service-role access internally, so this only needs to move
+# bytes from a plain socket to a TLS one, unchanged.
+#
+# NOT a general-purpose proxy — only /functions/v1/ is forwarded, matching
+# exactly the four paths the scanner ever calls (ingest, roster, outbox,
+# outbox/{id}/ack). Everything else 404s. An open proxy that forwards
+# arbitrary paths/hosts is a classic way to turn a small relay into
+# something the internet abuses for free.
+#
+# ${SUPABASE_HOST} is substituted at container start by the official nginx
+# image's docker-entrypoint templating (envsubst on *.template files in
+# /etc/nginx/templates/) — see ../docker-compose.yml.
+
+# Supabase sits behind a CDN/load balancer whose IPs can change. proxy_pass
+# with a bare hostname resolves ONCE at nginx startup and caches it forever
+# — if that IP ever rotates, this container keeps proxying to a dead
+# address until someone notices and restarts it. Public resolvers +
+# variable-based proxy_pass forces nginx to re-resolve per the TTL below
+# instead. (This also changes a bad hostname from a startup CRASH — as it
+# was in the first version of this file, verified by actually running it —
+# into a clean per-request failure, which is the better failure mode for a
+# box that should keep serving other requests even if one upstream name is
+# briefly unresolvable.)
+resolver 1.1.1.1 8.8.8.8 valid=300s;
+resolver_timeout 5s;
+
+server {
+    listen 80;
+    server_name _;
+
+    client_max_body_size 4k;   # these are small JSON taps/acks, never anything bigger
+
+    location /functions/v1/ {
+        set $upstream https://${SUPABASE_HOST};
+        proxy_pass $upstream/functions/v1/;
+        proxy_ssl_server_name on;
+        proxy_ssl_name ${SUPABASE_HOST};
+        proxy_set_header Host ${SUPABASE_HOST};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        proxy_connect_timeout 10s;
+        proxy_read_timeout    15s;
+    }
+
+    location / {
+        return 404;
+    }
+}

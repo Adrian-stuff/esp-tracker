@@ -11,6 +11,12 @@
 // settings.h. Once the config portal has saved a value, that's what runs;
 // these stop being read. Change them here to change what a brand-new,
 // never-configured scanner comes up as, not what this specific unit is doing.
+//
+// PER-DEVICE VALUES — must be set via the config portal before deployment:
+//   - DEFAULT_DEVICE_TOKEN: unique per scanner, must match devices.token_hash
+//   - DEFAULT_API_BASE + API_USE_TLS: Supabase URL for production
+//   - ROSTER_SALT: must match the ROSTER_SALT env var in Supabase
+//   - DEFAULT_SMS_PARENT_PRIMARY: parent phone number for direct SMS mode
 #define DEFAULT_DEVICE_TOKEN  "K1dNVNW8Lvx9zKWcWST9TKQYO_jpczXV"        // sha256 of this is in devices.token_hash
 
 // Local dev points at the FastAPI server on your LAN; production points at

@@ -76,3 +76,16 @@ esp-tracker/
 - The SIM800L level shifter (1k/2.2k divider on GPIO 17) is mandatory — RXD is not 3.3V tolerant
 - The scanner's `WIFI_SSID` and `WIFI_PASS` are now configurable via a captive portal
   (WiFiManager) — do not hardcode them in config.h for production deployments
+
+## Production connectivity
+
+- **Scanner** talks to Supabase (`https://xxxx.supabase.co`) via HTTPS. Endpoints:
+  - `POST /functions/v1/ingest` — tap batches
+  - `GET /functions/v1/roster` — hashed card UIDs
+  - `POST /api/relay/sms` — forwards tracker SMS to the `relay-sms` Edge Function
+- **Tracker** is SMS-only (2G data shutdown in PH). Sends location via SMS to scanner's SIM800L.
+  Scanner relays to server. Tracker does NOT talk to Supabase directly.
+- **Web dashboard** talks to Supabase directly via PostgREST + Realtime (anon key, RLS filtered).
+- **`relay-sms` Edge Function** (`supabase/functions/relay-sms/`) is the bridge between the
+  tracker's SMS reports and the cloud dashboard. Without it, tracker location data never reaches
+  Supabase. Deploy with `supabase functions deploy relay-sms --no-verify-jwt`.

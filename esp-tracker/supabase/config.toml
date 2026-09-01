@@ -40,3 +40,6 @@ verify_jwt = true
 
 [functions.sweep-outbox]
 verify_jwt = true
+
+[functions.relay-sms]
+verify_jwt = false

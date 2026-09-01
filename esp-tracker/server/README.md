@@ -112,3 +112,48 @@ print("login:", "parent@example.com", pw)
 print("DEVICE_TOKEN for tracker/include/config.h:", tok)
 PY
 ```
+
+## Production vs local dev
+
+The project has two parallel backends that serve the same API paths. Switching between them is one
+`API_BASE` change in firmware — no code change needed.
+
+| | **Local dev (FastAPI)** | **Production (Supabase + Vercel)** |
+|---|---|---|
+| Backend | FastAPI + SQLite on port 8000 | Supabase (Postgres + Edge Functions) |
+| Frontend | Served by FastAPI at `localhost:8000` | Static files on Vercel |
+| Auth | argon2id + session cookie | Supabase Auth (email/password) |
+| Realtime | WebSocket at `/ws/live` (unauthenticated) | Supabase Realtime (postgres_changes) |
+| SMS provider | `console` (prints to stdout) | Semaphore or Twilio |
+| Device auth | Bearer token → sha256 → `devices.token_hash` | Same — identical flow |
+| Ingest paths | `/functions/v1/ingest` → FastAPI handler | `/functions/v1/ingest` → Edge Function |
+| Roster | `/functions/v1/roster` → FastAPI handler | `/functions/v1/roster` → Edge Function |
+| Relay SMS | `/api/relay/sms` → FastAPI handler | `/api/relay/sms` → Edge Function (`relay-sms`) |
+| Outbox | `/functions/v1/outbox` → FastAPI handler | `/functions/v1/outbox` → Edge Function |
+| Dashboard data | WebSocket live feed + REST API | Supabase Realtime + PostgREST |
+
+### How the backends relate
+
+Both backends implement the same `/functions/v1/*` path structure. The scanner and tracker firmware
+do not care which backend they talk to — they just POST to the configured `API_BASE`. This means:
+
+- **Local dev**: `API_BASE = "http://192.168.1.8:8000"`, `API_USE_TLS = false`
+- **Production**: `API_BASE = "https://xxxx.supabase.co"`, `API_USE_TLS = true`
+
+The web dashboard (`web/app.js`) is hardcoded to talk to Supabase directly via PostgREST. It does
+NOT go through the FastAPI server. The FastAPI server has its own dashboard at `server/static/`
+that talks to the local backend.
+
+### Relay SMS in production
+
+The scanner forwards tracker SMS to the server via `POST /api/relay/sms`. In production, this hits
+the `relay-sms` Edge Function (`supabase/functions/relay-sms/index.ts`), which:
+
+1. Authenticates the scanner via bearer token
+2. Parses the SMS text (LOC position report or WIFISCAN WiFi scan)
+3. Verifies the HMAC signature
+4. Stores the data in `locations` and `wifi_scans` tables
+5. Returns `{ok, handled}`
+
+This is the bridge between the tracker (SMS-only, no GPRS due to 2G shutdown) and the cloud
+dashboard. Without it, tracker location data never reaches Supabase.

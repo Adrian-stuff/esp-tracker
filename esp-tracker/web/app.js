@@ -22,6 +22,8 @@ const SOURCE = {
 
 const $ = (id) => document.getElementById(id);
 let map, markers = {}, fitted = false, activeSos = null, primaryDevice = null;
+let trailLine = null, trailDevice = null;
+let sosAudioCtx = null, sosBeepOsc = null, sosBeepInterval = null;
 
 const secsAgo = (iso) => Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
 function ago(s) {
@@ -173,10 +175,16 @@ async function refresh() {
   }
   renderDevices(enriched);
 
+  // Scanners
+  renderScanners(devices.filter(x => x.kind === "scanner"));
+
+  // Attendance: last 200 taps for days view, last 8 for recent
   const { data: taps } = await sb.from("attendance")
     .select("card_uid,direction,recorded_at,cards(child_name)")
-    .order("recorded_at", { ascending: false }).limit(8);
-  renderAttendance(taps ?? []);
+    .order("recorded_at", { ascending: false }).limit(200);
+  const allTaps = taps ?? [];
+  renderAttendance(allTaps.slice(0, 8));
+  renderAttendanceDays(allTaps);
 
   const { data: open } = await sb.from("sos_events")
     .select("event_id,device_id,status,locations!sos_events_best_location_id_fkey(lat,lon,accuracy_m,source)")
@@ -208,7 +216,10 @@ function renderDevices(list) {
         ? `<div class="warn">Load is low (₱${d.balance_pesos}) — top up or the tracker goes silent.</div>` : ""}
       ${d.battery_pct != null && d.battery_pct <= 20
         ? `<div class="warn">Battery ${d.battery_pct}% — charge tonight.</div>` : ""}
-      <button data-locate="${d.id}">Locate now</button>`;
+      <div style="display:flex; gap:6px; flex-wrap:wrap">
+        <button data-locate="${d.id}">Locate now</button>
+        <button class="trail-btn" data-trail="${d.id}" onclick="toggleTrail('${d.id}', this)">Show trail</button>
+      </div>`;
     box.appendChild(el);
     if (loc) draw(d);
     if (!primaryDevice) { primaryDevice = d.id; loadPlaces(d.id); }
@@ -324,12 +335,13 @@ function showSos(row) {
     ? `±${Math.round(loc.accuracy_m)} m via ${(SOURCE[loc.source] || SOURCE.manual).label}`
     : "Position not yet known.";
   $("sos-banner").hidden = false;
-  try { new Audio("/alarm.mp3").play().catch(() => {}); } catch {}
+  startBeep();
   if (loc && map) map.setView([loc.lat, loc.lon], 17);
 }
 
 $("sos-ack").addEventListener("click", async () => {
   if (!activeSos) return;
+  stopBeep();
   const { data: { user } } = await sb.auth.getUser();
   // Setting status to 'acknowledged' IS the cut: the dispatch cron skips every
   // remaining rung on its next pass, so the voice calls never happen.
@@ -349,7 +361,7 @@ function subscribe() {
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "sos_events" },
         (p) => showSos(p.new))
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sos_events" },
-        (p) => { if (p.new.status !== "open") { $("sos-banner").hidden = true; activeSos = null; } })
+        (p) => { if (p.new.status !== "open") { $("sos-banner").hidden = true; activeSos = null; stopBeep(); } })
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "locations" },
         () => refresh())
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "attendance" },
@@ -359,6 +371,152 @@ function subscribe() {
       $("conn").textContent = live ? "live" : "reconnecting…";
       $("conn").className = "chip " + (live ? "live" : "down");
     });
+}
+
+// --------------------------------------------------------------- beep -----
+function startBeep() {
+  try {
+    sosAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sosBeepOsc = sosAudioCtx.createOscillator();
+    const gain = sosAudioCtx.createGain();
+    sosBeepOsc.type = "square";
+    sosBeepOsc.frequency.value = 440;
+    gain.gain.value = 0.3;
+    sosBeepOsc.connect(gain);
+    gain.connect(sosAudioCtx.destination);
+    sosBeepOsc.start();
+    // Pulse: on 200ms, off 200ms
+    let on = true;
+    sosBeepInterval = setInterval(() => {
+      gain.gain.value = on ? 0.3 : 0;
+      on = !on;
+    }, 200);
+  } catch {}
+}
+
+function stopBeep() {
+  if (sosBeepInterval) { clearInterval(sosBeepInterval); sosBeepInterval = null; }
+  if (sosBeepOsc) { try { sosBeepOsc.stop(); } catch {} sosBeepOsc = null; }
+  if (sosAudioCtx) { try { sosAudioCtx.close(); } catch {} sosAudioCtx = null; }
+}
+
+// ------------------------------------------------------------- trail -----
+async function toggleTrail(deviceId, btn) {
+  if (trailDevice === deviceId) {
+    // Hide trail
+    if (trailLine) { map.removeLayer(trailLine); trailLine = null; }
+    trailDevice = null;
+    btn.classList.remove("active");
+    btn.textContent = "Show trail";
+    return;
+  }
+  // Show trail for this device
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  const since = new Date(Date.now() - 24 * 3600e3).toISOString();
+  const { data: pts } = await sb.from("locations")
+    .select("lat,lon,source,recorded_at")
+    .eq("device_id", deviceId)
+    .gte("recorded_at", since)
+    .order("recorded_at", { ascending: true })
+    .limit(500);
+  btn.disabled = false;
+
+  if (!pts || pts.length < 2) {
+    btn.textContent = "No trail yet";
+    setTimeout(() => { btn.textContent = "Show trail"; }, 2000);
+    return;
+  }
+
+  // Remove old trail
+  if (trailLine) { map.removeLayer(trailLine); trailLine = null; }
+
+  // Draw polyline colored by source (use the most common source for the line)
+  const coords = pts.map(p => [p.lat, p.lon]);
+  const mainSource = pts[Math.floor(pts.length / 2)].source;
+  const meta = SOURCE[mainSource] || SOURCE.manual;
+  trailLine = L.polyline(coords, {
+    color: meta.color, weight: 3, opacity: 0.7, dashArray: "6 4",
+  }).addTo(map);
+
+  // Mark start and end
+  L.circleMarker(coords[0], { radius: 5, color: meta.color, fillColor: "#fff", fillOpacity: 1, weight: 2 }).addTo(map)
+    .bindPopup(`<b>Start</b><br>${new Date(pts[0].recorded_at).toLocaleTimeString()}`);
+  L.circleMarker(coords[coords.length - 1], { radius: 5, color: meta.color, fillColor: meta.color, fillOpacity: 1, weight: 2 }).addTo(map)
+    .bindPopup(`<b>Now</b><br>${new Date(pts[pts.length - 1].recorded_at).toLocaleTimeString()}`);
+
+  trailDevice = deviceId;
+  // Update all trail buttons
+  document.querySelectorAll(".trail-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.trail === deviceId);
+    if (b.dataset.trail !== deviceId) b.textContent = "Show trail";
+  });
+  btn.textContent = "Hide trail";
+  btn.classList.add("active");
+  map.fitBounds(trailLine.getBounds(), { padding: [40, 40] });
+}
+
+// ----------------------------------------------------------- scanners -----
+function renderScanners(list) {
+  const box = $("scanners");
+  if (!list.length) { box.innerHTML = '<p class="muted">No gate stations registered.</p>'; return; }
+  box.innerHTML = "";
+  list.forEach((s) => {
+    const age = s.last_seen_at ? secsAgo(s.last_seen_at) : null;
+    const online = age != null && age < 5 * 60;
+    const el = document.createElement("div");
+    el.className = "scanner";
+    el.innerHTML = `
+      <span class="sname">${s.name || s.id}</span>
+      <span class="sstatus ${online ? "on" : "off"}">${online ? "online" : ago(age) + (age != null ? "" : " — never seen")}</span>`;
+    box.appendChild(el);
+  });
+}
+
+// -------------------------------------------------- attendance days -----
+function renderAttendanceDays(taps) {
+  const box = $("attendance-days");
+  if (!taps.length) { box.innerHTML = '<p class="muted">No data yet</p>'; return; }
+
+  // Group by child + day
+  const groups = {};
+  taps.forEach(t => {
+    const d = new Date(t.recorded_at);
+    const day = d.toISOString().slice(0, 10);
+    const key = `${t.card_uid}||${day}`;
+    if (!groups[key]) {
+      groups[key] = {
+        name: t.cards?.child_name || t.card_uid,
+        day, dayLabel: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+        first: d, last: d, count: 0,
+      };
+    }
+    const g = groups[key];
+    g.count++;
+    if (d < g.first) g.first = d;
+    if (d > g.last) g.last = d;
+  });
+
+  // Sort: most recent day first, then by name
+  const rows = Object.values(groups).sort((a, b) => {
+    if (b.day !== a.day) return b.day.localeCompare(a.day);
+    return a.name.localeCompare(b.name);
+  });
+
+  // Show last 14 days max
+  const shown = rows.slice(0, 40);
+  box.innerHTML = "";
+  shown.forEach(g => {
+    const el = document.createElement("div");
+    el.className = "att-day";
+    const timeFmt = { hour: "2-digit", minute: "2-digit" };
+    el.innerHTML = `
+      <span class="aname">${g.name}</span>
+      <span class="aday">${g.dayLabel}</span>
+      <span class="atime">In ${g.first.toLocaleTimeString([], timeFmt)} – Out ${g.last.toLocaleTimeString([], timeFmt)}</span>
+      <span class="acount">${g.count} tap${g.count !== 1 ? "s" : ""}</span>`;
+    box.appendChild(el);
+  });
 }
 
 boot();

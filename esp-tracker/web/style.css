@@ -63,6 +63,36 @@ main{flex:1; display:flex; min-height:0}
 #attendance li{font-size:13px; display:flex; gap:8px}
 #attendance time{font-family:var(--mono); font-size:11px; color:var(--ink-3); margin-left:auto}
 
+/* --- scanner status --- */
+.scanner{
+  border:1px solid var(--line); border-radius:4px; padding:10px 12px;
+  background:var(--bg); margin-bottom:8px; display:flex; align-items:center; gap:10px;
+}
+.scanner .sname{font-weight:600; font-size:13px}
+.scanner .sstatus{font-family:var(--mono); font-size:11px; margin-left:auto}
+.scanner .sstatus.on{color:var(--ok)}
+.scanner .sstatus.off{color:var(--sos)}
+
+/* --- attendance days --- */
+.att-day{
+  display:grid; grid-template-columns:1fr auto; gap:2px 12px;
+  padding:8px 10px; border:1px solid var(--line); border-radius:4px;
+  background:var(--bg); margin-bottom:6px; font-size:13px;
+}
+.att-day .aname{font-weight:600; grid-column:1/-1}
+.att-day .aday{color:var(--ink-3); font-size:12px; grid-column:1/-1}
+.att-day .atime{font-family:var(--mono); font-size:11px; color:var(--ink-2)}
+.att-day .acount{font-family:var(--mono); font-size:11px; color:var(--ink-3); text-align:right}
+
+/* --- trail button --- */
+.trail-btn{
+  font:inherit; font-size:11px; padding:4px 8px; cursor:pointer;
+  border:1px solid var(--line); border-radius:3px; background:transparent;
+  color:var(--ink-3); margin-top:4px;
+}
+.trail-btn:hover{color:var(--accent); border-color:var(--accent)}
+.trail-btn.active{color:var(--accent); border-color:var(--accent); font-weight:600}
+
 #sos-banner{background:var(--sos); color:#fff; animation:pulse 1.2s ease-in-out infinite}
 .sos-inner{display:flex; align-items:center; gap:16px; padding:14px 18px; max-width:1100px; margin:0 auto}
 .sos-text{display:flex; flex-direction:column}

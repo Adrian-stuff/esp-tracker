@@ -1,30 +1,14 @@
-"""Parses and verifies the "LOC ..." SMS format tracker firmware sends when
-GPRS/HTTP isn't available on this hardware (SIM800L, 2G-only, confirmed
-dead under the Philippines' NTC-mandated 2G/3G shutdown — see PLAN.md §1b
-and tracker/src/modem.cpp's file header). The tracker never talks to this
-server directly: it texts a scanner's SIM800L, which relays whatever it
-receives here — see scanner-uno/sms_scanner/src/modem.h's pollSms() and
-scanner-uno/dashboard/app.py, the only caller of the endpoint that uses
-this module (main.py's /api/relay/sms).
+"""Parses and verifies SMS formats from the tracker firmware.
 
-Wire format (must match tracker/src/report.cpp byte for byte):
+Two formats are supported:
 
-    LOC <src>,<lat>,<lon>,<acc_m>,<epoch>,<code>
+1. LOC — routine position report (see parse())
+2. WIFISCAN — WiFi BSSID scan for server-side place matching (see parse_wifi_scan())
 
-src is a single letter for locator.h's Fix::source, compressed to fit an
-SMS: g=gnss, w=wifi, b=ble_anchor, c=cell.
-
-code is the first 8 hex chars of sha256(SMS_CMD_SECRET + "<src>,<lat>,<lon>,<acc_m>,<epoch>")
-— that exact substring, no "LOC " prefix, no trailing comma. Verified
-against the RAW TEXT the tracker sent (via the regex capture groups below),
-not a re-serialized float, so a platform formatting difference between the
-ESP32's snprintf and Python's float repr can never cause a false mismatch.
-Same truncated-SHA256-over-a-shared-secret shape as attendance.py's
-roster_hash() — a deterrent against someone texting a scanner's number
-pretending to be a tracker, not real end-to-end cryptography. Proportionate
-to what an SMS channel and an 8-bit-adjacent MCU can actually offer, same
-honesty as this project's TLS notes elsewhere — see SMS_CMD_SECRET's own
-comment in tracker/include/config.h.
+Both use the same truncated-SHA256-over-a-shared-secret verification.
+The tracker never talks to this server directly: it texts a scanner's
+SIM800L, which relays whatever it receives here — see scanner-uno/
+sms_scanner/src/modem.h's pollSms() and main.py's /api/relay/sms.
 """
 import hashlib
 import re
@@ -62,3 +46,53 @@ def parse(text: str):
     if _code(payload) != code:
         return None
     return SOURCE_CODES[src], float(lat_s), float(lon_s), float(acc_s), int(epoch_s)
+
+
+def parse_wifi_scan(text: str):
+    """Returns (recorded_at, aps_list) for a valid WIFISCAN report, else None.
+
+    aps_list is a list of dicts: [{"bssid": "AA:BB:CC:DD:EE:FF", "rssi": -45, "ssid": "Network"}, ...]
+
+    The code is verified the same way as LOC: sha256(SMS_CMD_SECRET + payload)[:8].
+    The payload is "<epoch>,<bssid>:<rssi>:<ssid>,<bssid>:<rssi>:<ssid>,...".
+    """
+    if not text.startswith("WIFISCAN "):
+        return None
+    body = text[len("WIFISCAN "):]
+
+    # Split off the trailing code (last 9 chars: comma + 8 hex)
+    if len(body) < 10:
+        return None
+    payload_part, _, code = body.rpartition(",")
+    if len(code) != 8 or not all(c in '0123456789abcdef' for c in code):
+        return None
+
+    if _code(payload_part) != code:
+        return None
+
+    # Parse the payload: <epoch>,<bssid>:<rssi>:<ssid>,...
+    parts = payload_part.split(",", 1)
+    if len(parts) < 2:
+        return None
+    try:
+        recorded_at = int(parts[0])
+    except ValueError:
+        return None
+
+    aps = []
+    for ap_str in parts[1].split(","):
+        # Format: AA:BB:CC:DD:EE:FF:<rssi>:<ssid>
+        segments = ap_str.split(":", 7)
+        if len(segments) < 7:
+            continue
+        bssid = ":".join(segments[:6])
+        try:
+            rssi = int(segments[6])
+        except ValueError:
+            continue
+        ssid = segments[7] if len(segments) > 7 else ""
+        aps.append({"bssid": bssid, "rssi": rssi, "ssid": ssid})
+
+    if not aps:
+        return None
+    return recorded_at, aps

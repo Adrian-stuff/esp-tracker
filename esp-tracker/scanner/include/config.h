@@ -17,7 +17,15 @@
 #define API_BASE      "http://192.168.1.50:8000"
 static constexpr bool API_USE_TLS = false;
 
-#define WIFI_SSID     "school-iot"
+// WiFi — configurable via captive portal at 192.168.4.1.
+// These are defaults only; saved credentials in NVS override them.
+#define AP_SSID       "Tracker-Scanner"
+#define AP_PASS       ""                  // open AP; set a password if needed
+#define WIFI_AP_TIMEOUT_S  180            // 3 min portal before reboot
+
+// Fallback if no saved credentials exist (compile-time defaults).
+// For production, set these via the captive portal instead.
+#define WIFI_SSID     ""
 #define WIFI_PASS     ""
 
 // ---------------------------------------------------------------------------
@@ -75,11 +83,7 @@ static constexpr bool LED_COMMON_ANODE = false;
 // anyone enrolls or switches number — and it throws away the reason the roster
 // is hashed in the first place. For that deployment, send the tap to a server
 // gateway number instead and let the server fan out.
-// Set false while the modem is not fitted. Everything else still works: taps
-// are read, stored, delivered over Wi-Fi, and the SERVER sends the parent's
-// text instead — device_sms_sent stays false, so nothing is lost and nothing is
-// duplicated. This flag only stops the firmware pretending a modem is there.
-static constexpr bool SIM900_PRESENT  = false;
+static constexpr bool SIM900_PRESENT  = true;
 
 static constexpr bool SMS_DIRECT_MODE = true;
 
@@ -104,6 +108,19 @@ static constexpr bool     RELAY_ENABLED  = true;
 static constexpr uint32_t RELAY_POLL_MS  = 20000;
 
 // ---------------------------------------------------------------------------
+// LCD — I2C character LCD (PCF8574 backpack), same as the Uno build.
+// Shares the I2C bus with the DS3231 at addresses 0x27 / 0x68.
+// ---------------------------------------------------------------------------
+#define LCD_I2C_ADDR   0x27
+static constexpr uint8_t LCD_COLS = 16;
+static constexpr uint8_t LCD_ROWS = 2;
+
+// ---------------------------------------------------------------------------
+// SMS inbox — polls for incoming tracker location reports
+// ---------------------------------------------------------------------------
+static constexpr uint32_t SMS_POLL_MS = 5000;
+
+// ---------------------------------------------------------------------------
 // Clock
 // ---------------------------------------------------------------------------
 // If the DS3231 is missing or lost power the scanner REFUSES taps rather than
@@ -112,3 +129,10 @@ static constexpr uint32_t RELAY_POLL_MS  = 20000;
 #define NTP_SERVER    "pool.ntp.org"
 static constexpr long     TZ_OFFSET_S       = 8 * 3600;   // PH, UTC+8
 static constexpr uint32_t NTP_RESYNC_S      = 24UL * 3600UL;
+
+// ---------------------------------------------------------------------------
+// Offline-fallback card (card.h) — sector 1 key. Deliberately NOT the MIFARE
+// factory default (FF FF FF FF FF FF). Spells "ESPTRK" in ASCII. Must match
+// card_writer's copy exactly, or writes/reads will both fail auth.
+// ---------------------------------------------------------------------------
+static constexpr uint8_t CARD_KEY_A[6] = {0x45, 0x53, 0x50, 0x54, 0x52, 0x4B};

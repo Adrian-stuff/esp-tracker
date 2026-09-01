@@ -58,7 +58,7 @@ bool refresh() {
     WiFiClient      plain;
     WiFiClientSecure tls;
     if (API_USE_TLS) tls.setInsecure();   // TODO: pin the CA before production
-    Client& client = API_USE_TLS ? (Client&)tls : (Client&)plain;
+    WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;
     if (!http.begin(client, String(API_BASE) + "/functions/v1/roster")) return false;

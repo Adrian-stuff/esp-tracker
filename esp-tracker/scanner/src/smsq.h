@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <HardwareSerial.h>
 
 // SIM900 outbound SMS, as a queue with a non-blocking state machine.
 //
@@ -34,4 +35,10 @@ namespace smsq {
     bool   ready();               // modem registered on the network
     size_t depth();
     int8_t signalQuality();       // AT+CSQ, -1 unknown
+
+    // For SMS inbox polling (sms.cpp): access to the UART2 serial port.
+    // Only call when isIdle() returns true to avoid conflicts with the
+    // outbound state machine.
+    HardwareSerial& serial();
+    bool isIdle();                // modem is in Idle state, safe for other AT cmds
 }

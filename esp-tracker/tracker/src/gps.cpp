@@ -5,6 +5,7 @@
 
 static TinyGPSPlus  s_gps;
 static HardwareSerial s_serial(1);
+static uint32_t s_lastFixMs = 0;
 
 namespace gps {
 
@@ -18,6 +19,8 @@ void power(bool on) { digitalWrite(PIN_GPS_EN, on ? HIGH : LOW); }
 
 void service() {
     while (s_serial.available()) s_gps.encode(s_serial.read());
+    // Track when we last had a valid fix
+    if (s_gps.location.isValid()) s_lastFixMs = millis();
 }
 
 bool fix(GnssFix& out) {
@@ -30,9 +33,14 @@ bool fix(GnssFix& out) {
     out.heading    = s_gps.course.deg();
     // HDOP is not accuracy, but it is the only proxy the NEO-6M gives us.
     out.accuracy_m = s_gps.hdop.isValid() ? s_gps.hdop.hdop() * 5.0f : 50.0f;
+    out.recorded_at = millis() / 1000;  // approximate, will be set by caller if needed
     return true;
 }
 
-bool hasFixSince(uint32_t since_ms) { (void)since_ms; return s_gps.location.isValid(); }  // TODO: age check
+bool hasFixSince(uint32_t since_ms) {
+    if (!s_gps.location.isValid()) return false;
+    // Check if the fix was received after since_ms
+    return s_lastFixMs >= since_ms;
+}
 
 }

@@ -1,0 +1,404 @@
+<title>Tracker &amp; Scanner Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700;800&family=IBM+Plex+Serif:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#EDEFE9; --surface:#FFFFFF; --surface-2:#F4F6F0; --surface-3:#E7EBE0;
+  --ink:#16201B; --ink-2:#46564C; --ink-3:#6B7A70;
+  --line:#D3DACE; --line-2:#E3E8DC;
+
+  --tracker:#0F6E4F; --tracker-soft:#E1F0E6;
+  --scanner:#9A5A16; --scanner-soft:#F5E9D8;
+  --danger:#B23A2E; --danger-soft:#F8E4E1;
+  --caution:#8A6212; --caution-soft:#FBF0DC;
+  --ok:#2C6E4E;
+
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#10140F; --surface:#171D16; --surface-2:#1C2319; --surface-3:#242C20;
+    --ink:#E7ECE3; --ink-2:#A9B5A1; --ink-3:#7C8A76;
+    --line:#2B3527; --line-2:#232C1F;
+
+    --tracker:#4FBF8E; --tracker-soft:#173327;
+    --scanner:#DFA24B; --scanner-soft:#332510;
+    --danger:#EA8479; --danger-soft:#3A1D1A;
+    --caution:#E6C15C; --caution-soft:#332812;
+    --ok:#63C48F;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#10140F; --surface:#171D16; --surface-2:#1C2319; --surface-3:#242C20;
+  --ink:#E7ECE3; --ink-2:#A9B5A1; --ink-3:#7C8A76;
+  --line:#2B3527; --line-2:#232C1F;
+
+  --tracker:#4FBF8E; --tracker-soft:#173327;
+  --scanner:#DFA24B; --scanner-soft:#332510;
+  --danger:#EA8479; --danger-soft:#3A1D1A;
+  --caution:#E6C15C; --caution-soft:#332812;
+  --ok:#63C48F;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--serif);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:920px;margin:0 auto;padding:0 24px 100px}
+.prose{max-width:66ch}
+:focus-visible{outline:2px solid var(--tracker);outline-offset:3px}
+
+header.mast{border-bottom:2px solid var(--ink);padding:52px 0 22px;display:flex;flex-direction:column;gap:14px}
+.eyebrow{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+h1{font-family:var(--sans);font-weight:800;font-size:clamp(30px,4.2vw,42px);line-height:1.06;letter-spacing:-.026em;margin:0;text-wrap:balance}
+.standfirst{font-family:var(--serif);font-size:17px;color:var(--ink-2);max-width:62ch;margin:0}
+
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--mono);font-size:12px;padding:16px 0 0}
+nav.toc a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{color:var(--ink);border-bottom-color:var(--ink-3)}
+nav.toc .dot{color:var(--line)}
+
+section{margin-top:52px;display:flex;flex-direction:column;gap:16px;scroll-margin-top:20px}
+p{margin:0}
+code{font-family:var(--mono);font-size:.88em;background:var(--surface-3);padding:1px 5px;border-radius:2px;color:var(--ink)}
+
+.device-head{display:flex;align-items:baseline;gap:12px;padding-bottom:12px;border-bottom:3px solid var(--dc)}
+.device-head .tag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dc);background:var(--dc-soft);padding:4px 9px;border-radius:2px}
+.device-head h2{font-family:var(--sans);font-weight:700;font-size:24px;letter-spacing:-.016em;margin:0}
+.device-lede{font-size:15.5px;color:var(--ink-2);max-width:66ch}
+.tracker{--dc:var(--tracker);--dc-soft:var(--tracker-soft)}
+.scanner{--dc:var(--scanner);--dc-soft:var(--scanner-soft)}
+
+h3{font-family:var(--sans);font-weight:600;font-size:14px;letter-spacing:.02em;color:var(--ink);margin:0}
+.subhead{display:flex;align-items:center;gap:9px;margin-top:6px}
+.subhead .n{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--dc);background:var(--dc-soft);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:520px;font-family:var(--sans);font-size:13.5px}
+th{text-align:left;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding:10px 13px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:9px 13px;border-bottom:1px solid var(--line-2);color:var(--ink-2);vertical-align:top;line-height:1.45}
+td:first-child{color:var(--ink);font-weight:500;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.gp{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink);white-space:nowrap}
+
+.panel{border:1px solid var(--line);border-left-width:4px;padding:16px 19px;display:flex;flex-direction:column;gap:8px;background:var(--surface)}
+.panel .tag{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.panel p{font-size:14.5px;color:var(--ink-2);max-width:70ch}
+.panel ul{margin:0;padding-left:19px;display:flex;flex-direction:column;gap:7px;font-size:14.5px;color:var(--ink-2);max-width:70ch}
+.panel b{color:var(--ink)}
+.panel.danger{background:var(--danger-soft);border-color:var(--danger)}
+.panel.danger .tag{color:var(--danger)}
+.panel.caution{background:var(--caution-soft);border-color:var(--caution)}
+.panel.caution .tag{color:var(--caution)}
+.panel.info{border-color:var(--dc)}
+.panel.info .tag{color:var(--dc)}
+
+.steps{display:flex;flex-direction:column;border:1px solid var(--line);background:var(--surface)}
+.step{display:grid;grid-template-columns:30px 1fr;gap:14px;padding:13px 16px;border-bottom:1px solid var(--line-2)}
+.step:last-child{border-bottom:none}
+.step .n{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--dc)}
+.step .t{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:2px}
+.step .d{font-size:13.5px;color:var(--ink-2);line-height:1.5}
+
+.diagram{border:1px solid var(--line);background:var(--surface);padding:18px 20px;overflow-x:auto}
+.diagram svg{display:block;height:auto;min-width:640px}
+.diagram-cap{font-family:var(--mono);font-size:11px;color:var(--ink-3);line-height:1.5;max-width:70ch}
+
+footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--ink-3);line-height:1.7;max-width:70ch;display:flex;flex-direction:column;gap:6px}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">Hardware build reference</div>
+  <h1>Tracker &amp; Scanner Build</h1>
+  <p class="standfirst">Two boards, wired and powered from the ground up: the wearable
+  tracker a child carries, and the RFID scanner bolted at the school gate. Same rule
+  breaks more builds than any bug does &mdash; get the power wiring right first.</p>
+  <nav class="toc">
+    <a href="#ground-rules">Shared ground rules</a><span class="dot">&middot;</span>
+    <a href="#tracker">The tracker</a><span class="dot">&middot;</span>
+    <a href="#scanner">The scanner</a><span class="dot">&middot;</span>
+    <a href="#together">How they talk to each other</a>
+  </nav>
+</header>
+
+<section id="ground-rules">
+  <h3 style="font-size:16px">Before wiring anything</h3>
+  <p class="prose" style="font-size:14.5px;color:var(--ink-2)">Both boards carry a 2G modem, and both modems share the
+  same trap: they pull far more current than they idle at, in short bursts, whenever they
+  transmit. Everything below follows from that one fact.</p>
+  <div class="panel danger">
+    <div class="tag">The one rule that matters most</div>
+    <ul>
+      <li>A GSM modem can pull up to <b>2 A</b> for a fraction of a second while transmitting,
+      at <b>3.4&ndash;4.4 V</b>. Neither board's onboard 3.3 V regulator nor a USB port can supply
+      that &mdash; give every modem its own direct feed at that voltage.</li>
+      <li>Put a <b>1000&ndash;2200 &micro;F electrolytic capacitor</b> across the modem's power pins,
+      physically as close to the module as the wiring allows. Without it, the transmit burst
+      dips the rail far enough to reset the whole board &mdash; which looks exactly like a
+      firmware bug and wastes a weekend proving it isn't.</li>
+      <li>Use thick, short power wires to the modem. A thin jumper has enough resistance on its
+      own to cause the same brownout.</li>
+      <li>The RFID reader and the GPS module are both <b>3.3 V only</b> &mdash; 5 V destroys either
+      one outright.</li>
+    </ul>
+  </div>
+  <p class="prose" style="font-size:14.5px;color:var(--ink-2)">Bring a board up one part at a time
+  &mdash; power the MCU alone first, then add one module, prove it works over serial, then add
+  the next. Wiring everything at once and flashing the full firmware turns every fault into
+  "nothing works," with no way to tell which part is actually broken. Both build orders below
+  follow that same discipline.</p>
+</section>
+
+<section>
+  <h3 style="font-size:16px">The system at a glance</h3>
+  <figure class="diagram" style="margin:0">
+    <svg viewBox="0 0 900 210" role="img" aria-label="The tracker is worn by the child and sends a text directly to the parent's phone when SOS is pressed, and separately sends location reports by SMS to the scanner. The scanner sits at the school gate, relays what it receives over Wi-Fi to the server, and the server drives the parent's dashboard.">
+      <rect x="10" y="55" width="170" height="90" rx="4" fill="var(--tracker-soft)" stroke="var(--tracker)" stroke-width="1.5"/>
+      <text x="95" y="92" text-anchor="middle" font-family="var(--sans)" font-size="13" font-weight="700" fill="var(--ink)">Tracker</text>
+      <text x="95" y="110" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">worn by the child</text>
+      <text x="95" y="126" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">SIM800L + GPS</text>
+
+      <rect x="365" y="55" width="170" height="90" rx="4" fill="var(--scanner-soft)" stroke="var(--scanner)" stroke-width="1.5"/>
+      <text x="450" y="92" text-anchor="middle" font-family="var(--sans)" font-size="13" font-weight="700" fill="var(--ink)">Scanner</text>
+      <text x="450" y="110" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">at the school gate</text>
+      <text x="450" y="126" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">RC522 + SIM900</text>
+
+      <rect x="720" y="55" width="170" height="90" rx="4" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1.5"/>
+      <text x="805" y="92" text-anchor="middle" font-family="var(--sans)" font-size="13" font-weight="700" fill="var(--ink)">Server</text>
+      <text x="805" y="110" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">+ parent dashboard</text>
+
+      <line x1="180" y1="100" x2="360" y2="100" stroke="var(--tracker)" stroke-width="2" marker-end="url(#a1)"/>
+      <text x="270" y="92" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--tracker)">location, by SMS</text>
+
+      <line x1="535" y1="100" x2="715" y2="100" stroke="var(--scanner)" stroke-width="2" marker-end="url(#a2)"/>
+      <text x="625" y="92" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--scanner)">Wi-Fi</text>
+
+      <path d="M95,145 L95,185 L805,185 L805,150" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+      <text x="450" y="203" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--danger)">SOS &mdash; straight to the parent's phone by SMS, no server in the path</text>
+
+      <defs>
+        <marker id="a1" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--tracker)"/></marker>
+        <marker id="a2" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--scanner)"/></marker>
+        <marker id="a3" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--danger)"/></marker>
+      </defs>
+    </svg>
+    <figcaption class="diagram-cap">Each device is a separate physical build with its own power
+    supply. They only meet over SMS and Wi-Fi &mdash; nothing is wired between them.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= TRACKER ============================= -->
+<section id="tracker" class="tracker">
+  <div class="device-head"><span class="tag">Device 1</span><h2>The tracker</h2></div>
+  <p class="device-lede">Worn by the child. One ESP32, a 2G modem for SMS, a GPS module, and a
+  recessed SOS button &mdash; all of it running off a single LiPo cell.</p>
+
+  <div class="subhead"><span class="n">A</span><h3>Parts</h3></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Part</th><th>Role</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>ESP32 DevKit v1 (WROOM-32)</td><td>Main board</td><td>Its built-in Wi-Fi and BLE scanning double as two of the four position sources</td></tr>
+        <tr><td>SIM800L</td><td>2G / GSM modem</td><td>SMS is the whole uplink in this build &mdash; see power rules</td></tr>
+        <tr><td>NEO-6M</td><td>GPS module</td><td>Keep its backup pin powered or every fix restarts cold</td></tr>
+        <tr><td>Momentary push button</td><td>SOS trigger</td><td>Recessed, on a wake-capable pin</td></tr>
+        <tr><td>LiPo cell, 2500&ndash;3000 mAh</td><td>Battery</td><td>Feeds the modem directly, not through the regulator</td></tr>
+        <tr><td>TP4056 module</td><td>Charger</td><td>Charges the battery only &mdash; powers nothing else</td></tr>
+        <tr><td>Electrolytic capacitor, 1000&ndash;2200 &micro;F</td><td>Bulk cap</td><td>At the modem's power pins. Not optional</td></tr>
+        <tr><td>LED + 220 &Omega; resistor</td><td>Child-facing feedback</td><td>Standing in for a vibration motor that's out of stock</td></tr>
+        <tr><td>Passive piezo buzzer</td><td>Extra feedback</td><td>Same GPIO family, driven with <code>tone()</code></td></tr>
+        <tr><td>Resistors, 1 k&Omega; + 2.2 k&Omega;</td><td>Level shifter</td><td>Protects the modem's input pin from 3.3 V logic it isn't rated for</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="subhead"><span class="n">B</span><h3>How it's powered</h3></div>
+  <p class="prose" style="font-size:14.5px;color:var(--ink-2)">The battery is the supply, not a
+  backup. USB only ever reaches the TP4056, which charges the LiPo and nothing else. The LiPo's
+  raw 3.7&ndash;4.2 V then goes <b>straight to the SIM800L</b>, because the modem's transmit
+  bursts need far more current than the ESP32's onboard 3.3 V regulator can give. That same
+  3.3 V rail is fine for the ESP32 and the GPS module, which draw much less. Every ground is
+  tied together across the whole board.</p>
+
+  <div class="subhead"><span class="n">C</span><h3>Wiring</h3></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Signal</th><th>GPIO</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>SIM800L TX &rarr; ESP32 RX</td><td class="gp">16</td><td>UART2</td></tr>
+        <tr><td>ESP32 TX &rarr; SIM800L RX</td><td class="gp">17</td><td>Through the 1 k&Omega; / 2.2 k&Omega; divider, &asymp;2.3 V at the modem &mdash; its RX pin isn't 3.3 V tolerant. The other direction needs no shifting; the modem's &asymp;2.8 V output already reads as logic HIGH</td></tr>
+        <tr><td>SIM800L PWRKEY</td><td class="gp">23</td><td>Pulse LOW &asymp;1 s to toggle the modem on or off</td></tr>
+        <tr><td>SIM800L power gate</td><td class="gp">32</td><td>High-side MOSFET, cuts power to the modem entirely</td></tr>
+        <tr><td>SIM800L DTR</td><td class="gp">19</td><td>Held LOW to wake the modem from its sleep mode</td></tr>
+        <tr><td>NEO-6M TX &rarr; ESP32 RX</td><td class="gp">25</td><td>UART1, remapped off its default pins</td></tr>
+        <tr><td>ESP32 TX &rarr; NEO-6M RX</td><td class="gp">26</td><td>UART1, remapped</td></tr>
+        <tr><td>NEO-6M power gate</td><td class="gp">27</td><td>MOSFET &mdash; but the module's backup-power pin (V_BCKP) stays powered <b>regardless</b> of this gate. Cutting it turns every fix into a slow cold start instead of a fast one, which costs more energy than the gating saves</td></tr>
+        <tr><td>SOS button</td><td class="gp">33</td><td>One of the few pins that can wake the board from deep sleep. Active low, internal pull-up</td></tr>
+        <tr><td>Feedback LED</td><td class="gp">13</td><td>Through a 220 &Omega; resistor to ground</td></tr>
+        <tr><td>Piezo buzzer</td><td class="gp">12</td><td>Passive, driven with <code>tone()</code>. This pin also sets flash voltage at boot &mdash; don't repurpose it casually</td></tr>
+        <tr><td>Onboard debug LED</td><td class="gp">2</td><td>Not the child-facing one</td></tr>
+        <tr><td>Battery sense</td><td class="gp">34</td><td>Has to be a pin in the 32&ndash;39 range &mdash; the other analog input can't be read while Wi-Fi is on. 100k/100k divider</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="subhead"><span class="n">D</span><h3>Build it in this order</h3></div>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><div><div class="t">ESP32 alone</div><div class="d">Blink the onboard LED, blink the feedback LED, sound the piezo. Confirms the board, the supply, and the feedback wiring before anything else can confuse the picture.</div></div></div>
+    <div class="step"><div class="n">2</div><div><div class="t">GPS on its own</div><div class="d">Power it from 3.3 V and watch its serial output. Expect GPS sentences within a minute outdoors, up to five indoors. Nothing coming through usually means TX/RX are swapped, or the module was run at 5 V and is dead.</div></div></div>
+    <div class="step"><div class="n">3</div><div><div class="t">Modem on its own supply</div><div class="d">Power it from the LiPo, before any code runs. Confirm its status LED is blinking, then confirm it answers a basic command, shows it's registered on the network, and can send one text by hand.</div></div></div>
+    <div class="step"><div class="n">4</div><div><div class="t">SOS button</div><div class="d">Confirm the pin reads low while held and high the rest of the time.</div></div></div>
+    <div class="step"><div class="n">5</div><div><div class="t">Full firmware</div><div class="d">Only now. Everything gets wired together and flashed once every part has already proven itself alone.</div></div></div>
+  </div>
+
+  <div class="subhead"><span class="n">E</span><h3>If something's wrong</h3></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Symptom</th><th>Usual cause</th></tr></thead>
+      <tbody>
+        <tr><td>Board resets whenever a text sends</td><td>Missing or undersized bulk cap on the modem's power rail &mdash; the single most common fault on this build</td></tr>
+        <tr><td>Modem never answers a basic command</td><td>TX and RX swapped &mdash; costs nothing to just try them the other way</td></tr>
+        <tr><td>Modem answers, but replies are garbled</td><td>Baud mismatch, or the level shifter on GPIO 17 is missing</td></tr>
+        <tr><td>Modem stays stuck "searching" for the network</td><td>No 2G coverage, the SIM isn't registered to an identity, or its prepaid load has expired</td></tr>
+        <tr><td>GPS takes &asymp;27 s for every single fix</td><td>Backup power (V_BCKP) isn't reaching the module between power cycles</td></tr>
+        <tr><td>GPS produces nothing at all</td><td>TX/RX swapped, or the module was run at 5 V</td></tr>
+        <tr><td>Button doesn't wake the board from sleep</td><td>Wired to a pin that isn't RTC-capable</td></tr>
+        <tr><td>Works fine on USB, fails on battery</td><td>The battery sags under the modem's transmit burst &mdash; try a fresher cell and thicker wire</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================= SCANNER ============================= -->
+<section id="scanner" class="scanner">
+  <div class="device-head"><span class="tag">Device 2</span><h2>The scanner</h2></div>
+  <p class="device-lede">Bolted at the gate, mains-powered. A card tap reads the tag, checks it
+  against a cached list, and both logs it to the network and can text the parent directly &mdash;
+  either path works without the other.</p>
+
+  <div class="subhead"><span class="n">A</span><h3>Parts</h3></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Part</th><th>Role</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>ESP32 DevKit v1</td><td>Main board</td><td>Mains powered, so battery life isn't a constraint here</td></tr>
+        <tr><td>MFRC522 (RC522)</td><td>RFID reader</td><td>13.56 MHz. 3.3 V only &mdash; 5 V destroys it</td></tr>
+        <tr><td>DS1302</td><td>Real-time clock</td><td>Three-wire, not I&sup2;C. Coin-cell backed, so it survives outages and reboots</td></tr>
+        <tr><td>SIM900</td><td>2G / GSM modem</td><td>A second, independent uplink &mdash; texts the parent even when the Wi-Fi is down</td></tr>
+        <tr><td>16&times;2 character LCD, I&sup2;C backpack</td><td>Display</td><td>Optional, but turns a beep into a name on screen</td></tr>
+        <tr><td>Buzzer</td><td>Audio feedback</td><td>Driven through a transistor &mdash; never straight off a GPIO pin</td></tr>
+        <tr><td>Green + red LED, or one 4-pin RGB LED</td><td>Status lights</td><td>Either works &mdash; an RGB LED's red/green legs land on the same two pins the discrete LEDs would use</td></tr>
+        <tr><td>5 V USB power supply</td><td>Power</td><td>Into the board's VIN pin, never into the RC522</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="subhead"><span class="n">B</span><h3>How it's powered</h3></div>
+  <p class="prose" style="font-size:14.5px;color:var(--ink-2)">The SIM900 has the same appetite as
+  the tracker's modem &mdash; up to 2 A in bursts at 3.4&ndash;4.4 V &mdash; and the same rule
+  applies: it can't run from the ESP32's 3.3 V pin or straight off USB 5 V. Give it its own
+  regulator stepped down to roughly 4 V (or a shield that already has one), plus the same
+  1000&ndash;2200 &micro;F bulk cap right at its power pins. Being on mains power removes the
+  battery-budget question here, not the current spike.</p>
+
+  <div class="subhead"><span class="n">C</span><h3>Wiring</h3></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Signal</th><th>GPIO</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>RC522 SDA / SS</td><td class="gp">5</td><td>SPI</td></tr>
+        <tr><td>RC522 SCK</td><td class="gp">18</td><td>SPI</td></tr>
+        <tr><td>RC522 MOSI</td><td class="gp">23</td><td>SPI</td></tr>
+        <tr><td>RC522 MISO</td><td class="gp">19</td><td>SPI</td></tr>
+        <tr><td>RC522 RST</td><td class="gp">4</td><td>Moved off its usual pin to keep I&sup2;C free</td></tr>
+        <tr><td>RC522 power</td><td class="gp">&mdash;</td><td>3.3 V only, never 5 V</td></tr>
+        <tr><td>DS1302 CLK</td><td class="gp">14</td><td>Three-wire interface</td></tr>
+        <tr><td>DS1302 DAT</td><td class="gp">15</td><td>Three-wire</td></tr>
+        <tr><td>DS1302 CE</td><td class="gp">2</td><td>Three-wire</td></tr>
+        <tr><td>LCD SDA</td><td class="gp">21</td><td>I&sup2;C &mdash; the only thing on this bus</td></tr>
+        <tr><td>LCD SCL</td><td class="gp">22</td><td>I&sup2;C</td></tr>
+        <tr><td>SIM900 TX &rarr; ESP32 RX</td><td class="gp">16</td><td>UART2</td></tr>
+        <tr><td>ESP32 TX &rarr; SIM900 RX</td><td class="gp">17</td><td>UART2</td></tr>
+        <tr><td>SIM900 PWRKEY</td><td class="gp">32</td><td>See the caution below &mdash; this one bites</td></tr>
+        <tr><td>Buzzer</td><td class="gp">25</td><td>Through a transistor</td></tr>
+        <tr><td>LED, green / OK</td><td class="gp">26</td><td>Green leg, if using an RGB LED</td></tr>
+        <tr><td>LED, red / error</td><td class="gp">27</td><td>Red leg, if using an RGB LED</td></tr>
+        <tr><td>LED, blue (RGB only)</td><td class="gp">13</td><td>Ignored unless the RGB option is wired in. Chosen because it carries no boot-time role, unlike pin 12</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel caution">
+    <div class="tag">The SIM900's power button isn't a power button</div>
+    <p>PWRKEY is a <b>toggle</b>, not an on switch &mdash; every &asymp;1.2 s LOW pulse flips the
+    modem between on and off. That matters because the ESP32's own boot leaves GPIO 32 floating
+    for a moment, and if it floats low, the modem's power state flips at random on every reset.
+    Wire it exactly as speced, and let the firmware pin the line high the instant it starts &mdash;
+    that's what makes the boot behavior predictable instead of a coin flip.</p>
+  </div>
+
+  <div class="panel caution">
+    <div class="tag">Get the LED wiring type right</div>
+    <p>If you use a single 4-pin RGB LED instead of two discrete ones, its wiring type has to
+    match what the firmware expects. Common-cathode (the shared leg to ground, lit on HIGH) is
+    the default assumption. Wire a common-anode LED without changing that setting and every cue
+    inverts &mdash; on at idle, dark during an actual alert.</p>
+  </div>
+
+  <div class="panel info">
+    <div class="tag">Why the clock isn't optional</div>
+    <p>The ESP32 has no clock of its own; it only knows the time by asking the network, and a
+    school network will drop. The DS1302 keeps ticking through outages and reboots on its coin
+    cell, so a tap that gets buffered during an outage still carries the moment it actually
+    happened, not a guess made later when the connection comes back.</p>
+  </div>
+
+  <div class="subhead"><span class="n">D</span><h3>Build it in this order</h3></div>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><div><div class="t">ESP32 alone</div><div class="d">Confirm the board boots and the LEDs and buzzer respond to a basic test.</div></div></div>
+    <div class="step"><div class="n">2</div><div><div class="t">RC522</div><div class="d">Tap a known card and confirm its ID prints over serial. Wrong readings, or nothing at all, almost always means it was run at 5 V.</div></div></div>
+    <div class="step"><div class="n">3</div><div><div class="t">DS1302</div><div class="d">Set the time once, power-cycle the board, and confirm the clock kept ticking on the coin cell rather than resetting.</div></div></div>
+    <div class="step"><div class="n">4</div><div><div class="t">LCD</div><div class="d">Confirm it shows text over I&sup2;C at address 0x27.</div></div></div>
+    <div class="step"><div class="n">5</div><div><div class="t">SIM900</div><div class="d">Power it and let the boot sequence run &mdash; the firmware probes it with a basic command before deciding whether to power-cycle it. Confirm it registers on the network and can send a text. It's the same command set as the tracker's modem, so the same checks apply.</div></div></div>
+    <div class="step"><div class="n">6</div><div><div class="t">Full firmware</div><div class="d">Only now. Everything wired together and flashed once every part has proven itself alone.</div></div></div>
+  </div>
+
+  <div class="subhead"><span class="n">E</span><h3>If something's wrong</h3></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Symptom</th><th>Usual cause</th></tr></thead>
+      <tbody>
+        <tr><td>Reader returns nothing, or a garbage ID</td><td>Powered at 5 V instead of 3.3 V &mdash; likely dead</td></tr>
+        <tr><td>Clock resets to a default time after every power cycle</td><td>Coin cell missing or dead, or CLK/DAT/CE wired out of order</td></tr>
+        <tr><td>LCD is blank or shows garbled characters</td><td>Wrong I&sup2;C address, or SDA/SCL swapped</td></tr>
+        <tr><td>Status LEDs sit lit at idle, go dark during an alert</td><td>Common-anode LED wired without flipping the matching setting</td></tr>
+        <tr><td>Modem's power state flips unpredictably across resets</td><td>Expected if PWRKEY isn't pinned high fast enough at boot &mdash; see the caution above</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="prose" style="font-size:13.5px;color:var(--ink-3);font-family:var(--mono)">A card can
+  also carry a backup contact directly on itself, for when the network truly can't be reached.
+  That data sits behind a key that's deliberately not the factory default, so writing new cards
+  means using the project's own card-writer tool with the matching key.</p>
+</section>
+
+<section id="together">
+  <h3 style="font-size:16px">How they talk to each other</h3>
+  <p class="prose" style="font-size:14.5px;color:var(--ink-2)">The two boards never share a wire.
+  The tracker's location reports travel to the scanner purely as SMS, addressed to the scanner's
+  SIM900 number; the scanner relays whatever it receives onward over its own Wi-Fi. An SOS from
+  the tracker skips that whole path &mdash; it goes straight to the parent's phone by SMS, with
+  no server and no scanner between them, so it survives either device being offline.</p>
+</section>
+
+<footer>
+  <span>Pin maps are authoritative in <code>tracker/include/pins.h</code> and <code>scanner/include/pins.h</code> &mdash; if a pin ever changes, change it there first and this page second.</span>
+  <span>Build: <code>pio run -t upload -e tracker</code> &middot; <code>pio run -t upload -e scanner</code></span>
+</footer>
+
+</div>

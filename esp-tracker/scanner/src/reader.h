@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <MFRC522.h>
 
 // RC522 UID reader.
 //
@@ -20,4 +21,6 @@ namespace reader {
     void begin();
     bool poll(Tap& out);          // true at most once per card per TAP_DEBOUNCE_MS
     bool sawDuplicate();          // last poll() was suppressed as a repeat
+    MFRC522& instance();          // for card::read() to access the MFRC522 directly
+    void release();               // halt card after card::read() is done
 }

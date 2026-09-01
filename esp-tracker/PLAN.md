@@ -131,6 +131,226 @@ every event an id so a retried POST is idempotent.
 
 ---
 
+## 1b. Scanner alternative — Arduino Uno + SIM800L (cellular-only)
+
+Not hypothetical: both ESP32 boards on hand failed independent hardware diagnosis (bad EN/regulator
+circuit on one, a dead or disconnected chip behind an otherwise-healthy USB-UART bridge on the
+other — neither is a wiring, driver, cable, or host OS problem). The Arduino Uno is the one MCU
+confirmed working end to end. This section documents the fallback so the scanner can ship on it if a
+replacement ESP32 doesn't arrive in time, without treating it as a downgrade in the data contract.
+
+Two components originally planned for this build turned out to be the wrong part, both discovered
+by testing against real hardware rather than assumption:
+
+- **The "I2C LED" is a PCF8574 LCD backpack**, not an RGB driver — its 8 GPIO lines are hard-wired
+  to LCD control signals, not free outputs. Status feedback is short text on a 16x2 screen instead
+  of a colour. See `scanner-uno/src/display.h`.
+- **The RTC is a DS1302**, not a DS3231 — 3-wire (CE/IO/SCLK), not I2C at all, which is why it
+  never showed up in any I2C bus scan. Confirmed working on real hardware: read, write, and the
+  oscillator itself all verified ticking correctly. See `scanner-uno/src/clock.h` for a real
+  limitation this swap costs: DS1302 has no hardware power-loss flag equivalent to DS3231's OSF, so
+  the "refuse taps without a trustworthy clock" rule is weaker here than the design elsewhere in
+  this project.
+
+A third swap happened at the uplink itself: **the original SIM900 shield was scrapped for a bare
+SIM800L**, after it never once responded to `AT` across an exhaustive test matrix — every common
+baud rate (9600/19200/38400/57600/115200), both TX/RX orientations, both power configurations
+(external adapter and Arduino-supplied), confirmed ground, confirmed the module's own Status LED
+lit (meaning it had power), and independent confirmation via a direct USB-UART adapter bypassing
+the Uno entirely. The SIM800L, wired to the identical pins, answered `AT` -> `OK` at 9600 baud
+within minutes once a separate 5V rail glitch was fixed.
+
+```
+   ┌───────────────────────────────────────┐
+   │     Arduino Uno scanner (mains)        │
+   │  RC522 (SPI)  ── card UID              │
+   │  DS1302 (3-wire) ── timestamp          │
+   │  LCD (I2C, PCF8574 backpack)           │
+   │  Buzzer (GPIO) ── tap feedback         │
+   │  SIM800L (SoftwareSerial, 9600)        │
+   │    ├─ GPRS HTTP → same ingest/         │
+   │    │   attendance endpoint as ESP32    │
+   │    └─ SMS → same parent notify path    │
+   │  EEPROM ── offline tap queue (~1 KB)   │
+   └───────────────┬─────────────────────────┘
+                    │  one module, one uplink, no Wi-Fi credential to manage
+                    ▼
+        same FastAPI / Supabase backend, same `attendance` table,
+        same idempotent tap id — the server can't tell which MCU sent it
+```
+
+**The key difference from the ESP32 design isn't the MCU, it's the uplink count.** The ESP32
+scanner carries two: Wi-Fi for the record, a SIM900 for SMS only (§Appendix: hardware — the ESP32
+scanner's own SIM900 is unaffected by any of the above; that's a different board). Here the SIM800L
+does both jobs itself — GPRS for the HTTP POST, SMS on the same AT session — so the scanner stops
+depending on school Wi-Fi entirely. The tradeoff is total dependence on 2G coverage at the gate;
+confirm the SIM800L actually registers on Globe or Smart's 2G band at the real deployment site
+before committing, since 2G sunset dates vary by carrier and region in PH.
+
+### Constraints that don't exist on the ESP32 build
+
+| Constraint | Why it matters | What to do about it |
+|---|---|---|
+| **2 KB SRAM total** | RC522 + DS1302 + LCD + an AT-command parser + HTTP response buffer, all at once, on a chip with no heap headroom | No ArduinoJson — hand-build fixed-format request bodies as plain strings, parse only the HTTP status line back |
+| **~30 KB usable flash** | RC522/DS1302/LCD libraries plus a hand-rolled SIM800L AT driver | Keep the AT driver to the exact command set needed (registration check, HTTP GET/POST, SMS send) — not a general-purpose GSM library |
+| **One hardware UART, shared with USB/debug** | Unlike the ESP32's dedicated UART2 for the modem | SIM800L goes on `SoftwareSerial` at 9600 — confirmed against real hardware, not assumed |
+| **No filesystem** | LittleFS doesn't exist on AVR | Offline tap queue lives in internal EEPROM — figure ~1 KB, i.e. a few dozen buffered taps, not the ESP32 scanner's deeper buffer. Fine for a gate with intermittent coverage, not for extended multi-day outages |
+| **No OTA** | Uno has no wireless update path | Firmware updates require physical USB access — acceptable for a mains-powered, fixed station |
+
+### Pins (fixed by the AVR, not remappable like ESP32 GPIOs)
+
+| Signal | Uno pin | Notes |
+|---|---|---|
+| RC522 SCK/MOSI/MISO | 13 / 11 / 12 | Hardware SPI, not optional |
+| RC522 SS / RST | 10 / 9 | Any free digital pin |
+| LCD SDA/SCL | A4 / A5 | Hardware I2C, not optional — PCF8574 backpack, address `0x27` |
+| DS1302 CE/IO/SCLK | 4 / 3 / 2 | 3-wire, NOT I2C — own dedicated pins, unrelated to the LCD's bus |
+| Buzzer | 6 | Plain GPIO `tone()`, no transistor needed for a small piezo |
+| SIM800L RX/TX | 7 / 8 (`SoftwareSerial`) | Level-shift Uno's 5 V TX into SIM800L's RX — confirmed not 5 V tolerant, unlike the SIM900 shield this replaced, which had its own onboard regulation |
+| SIM800L power | Buck converter, 3.4-4.4 V | **Never the Uno's 5 V pin** — same 2 A burst warning as the tracker's SIM800L, see Appendix. A bulk capacitor (1000-2200uF) close to the module is not optional; without one the symptom is random resets that look like a firmware bug |
+
+### Status
+
+Firmware at `scanner-uno/` builds clean: RAM 1453/2048 bytes (70.9%), flash 30998/32256 bytes
+(96.1%) — real numbers from `pio run -e uno` (flash headroom is now the tighter of the two, ~1.3KB
+free, after the offline-fallback card feature below; RAM had come down from 1628 bytes (79.5%) via a
+deliberate RAM-headroom pass, both changes verified booting cleanly on real hardware (full
+RC522+DS1302+LCD+buzzer+SIM800L harness) before and after: `Wire`/`twi.c`'s I2C buffers overridden
+32->16 bytes (`platformio.ini`'s `TWI_BUFFER_LENGTH` build flag plus a project-local `lib/Wire/`
+copy for the one constant that isn't `#ifndef`-guarded upstream — saved 80 bytes, zero functional
+risk since nothing here sends more than a few bytes per I2C transaction), and the SMS queue depth
+cut from 2 to 1 (saved 123 bytes — safe because SMS here is explicitly best-effort, never the
+durable record, so a second queued message just waits one more relay poll cycle).
+
+Both the flash budget and this whole exercise trace back to a real lesson learned the hard way: an
+earlier self-test build sat at 94.6% static RAM and produced a reset loop that looked exactly like
+a hardware fault, but was actually RAM/stack exhaustion in the test harness itself — confirmed by
+direct A/B hardware test (same wiring, low-RAM sketch, zero resets). The same class of bug hit the
+real firmware too (a crash inside `display::begin()` that needed the *entire* harness connected to
+reproduce, which made it look hardware-related until a plain RAM trim fixed it). The per-peripheral
+isolation sketches (`scanner-uno/selftest_i2c/`, `selftest_rfid/`, `selftest_rtc/`,
+`selftest_sim_only/`, `selftest_buzzer/`, `selftest_eeprom/`) exist because of that lesson — trust
+their results over the combined `selftest/`'s when they disagree.
+
+**Confirmed working on real hardware, this session:** RC522 (independent dump-sketch test), LCD
+(visually confirmed text on screen), DS1302 (read/write/oscillator round-tripped correctly), EEPROM
+(write/read verified), and SIM800L end to end — not just `AT` → `OK`, but SIM detected
+(`+CPIN: READY`), registered on the home network (`AT+CREG` stat=1), and a real SMS sent and
+delivered (`scanner-uno/selftest_sim_only/` is now a dedicated, reusable SIM800L test tool covering
+all of this). The full integrated firmware (all six peripherals together) boots clean and reports
+`modem=ok`. The one thing that turned out to matter as much as any wiring diagram: **a stable 5V
+rail** — an unstabilized supply produced total AT-command silence on both the SIM900 and the
+SIM800L that was indistinguishable from a dead module, until traced to the actual power glitch. A
+second, unrelated real fault also turned up this way: the SIM800L's own SIM card wasn't making
+contact (a common cause when a nano/micro SIM is riding in an adapter to fit the module's full-size
+slot) — confirmed by the SIM working fine in a phone while the module reported `AT+CPIN? ERROR`.
+
+**Update (2026-08-31): GPRS is now a closed question for this hardware, not an open one.**
+Registration itself was checked (`AT+CREG?` → `stat=1`, real if weak signal `AT+CSQ ~3`) and GPRS
+was re-tested end to end: `AT+CGATT=1` fails immediately, before the APN is even used. Root-caused,
+not just observed — three independent signals agree: the SIM's data plan itself isn't the blocker
+(mobile data confirmed working on a phone with this same SIM), that phone's network-mode settings
+don't even offer a 2G-only option anymore, and the Philippines' NTC has a mandated nationwide 2G/3G
+shutdown in progress (area-by-area, complete by 2026-12-31; Smart already dropped 3G in September
+2025 — [NTC memorandum via CSA Group](https://www.csagroup.org/global-certification-regulatory-update/ntc-issues-memorandum-circular-on-2g-3g-network-shutdown-and-device-certification-restrictions/),
+[Manila Times](https://www.manilatimes.net/2025/09/22/business/sunday-business-it/dict-3g-networks-to-shut-down-in-the-philippines-by-2026/2187832)).
+The SIM800L is 2G-only hardware with no 3G/4G fallback, so this isn't fixable by config, APN, or
+firmware changes — GPRS on this specific module is not a "confirm later" gap, it's a hardware
+ceiling. **SMS-only is the durable design for this board, not a stopgap** — see
+`scanner-uno/sms_scanner/`, the long-term firmware. A real HTTP/ingest path on Uno hardware would
+need a 3G/4G-capable cellular module instead.
+
+The plain-HTTP relay bridge this needs (the SIM800L can't speak TLS — see config.h) exists at
+`relay-bridge/` — a small nginx reverse proxy holding no secrets, verified end to end against a
+real HTTPS host during development (see its README for what was and wasn't tested). It still needs
+a real Supabase project to point at, and a box with a public IP/domain to run on — the SIM800L
+reaches it over cellular data, not the school LAN, which rules out "just run it locally" on a
+machine behind NAT.
+
+Known limitations of this first pass, worth reading before extending it: modem calls block the
+caller for one AT exchange (a tap during a drain/relay call waits, bounded, rather than being
+picked up instantly — see modem.h), the JSON parsing is hand-rolled for the exact shapes this
+build controls (no escape handling), and roster/queue capacity (40 cards / 60 buffered taps) fits
+a pilot, not a full school — see the EEPROM upgrade path above.
+
+### Offline-fallback RFID card format
+
+The normal attendance path never needs anything stored on the card beyond its UID — the roster
+hash cache (`roster.cpp`) and server-driven SMS (`relay.cpp`) handle everything. But when the
+network really is down (see the GPRS/signal issue above) and there's no way to reach the outbox
+relay, the scanner has no way to know who to text. `scanner-uno/src/card.h` adds a second,
+optional data payload written to each card for exactly that case: the parent's phone number and
+the student's identity, read directly off the card and texted straight from the device with no
+server round trip.
+
+**Wire format** (48 bytes, one MIFARE Classic sector — sector 1, blocks 4/5/6; block 7 is that
+sector's key trailer, not data): 1-byte magic, 1-byte version, 5 bytes packed BCD phone (10 PH
+mobile digits, firmware prepends `+63`), 2-byte little-endian student ID, 20-byte ASCII name,
+1-byte CRC8 over everything before it, 18 bytes reserved. Fitting in one sector is the actual
+speed optimization the "compressed enough to be fast" requirement was about: one `PCD_Authenticate`
+plus three sequential block reads, no second AUTH round trip. Protected by a project-specific key
+(`CARD_KEY_A` in `include/config.h`) rather than the MIFARE factory default — a deterrent against
+casual reads with a generic reader, not real security (MIFARE Classic's Crypto1 cipher is publicly
+broken). This is also the honest privacy tradeoff of this design: a lost/stolen *card* now exposes
+one child's contact info, whereas a lost *scanner* (which never stores this) still exposes nothing.
+
+**Firmware integration:** `reader.cpp`'s `poll()` used to halt the card immediately on a successful
+read; it now leaves the card selected and exposes a separate `release()`, so `card.cpp`'s
+`card::read()` can pull the extra sector from the *same* tap session before the caller finally
+calls `release()`. `main.cpp`'s tap handler calls `card::read()` only when `store::push()` succeeded
+and `net::online()` is false, and on success enqueues a direct SMS via `smsq::enqueue()` — the same
+best-effort queue the gateway path already uses, just fed locally instead of by the server.
+
+**Enrollment:** a PC can't drive an RC522 directly, so `scanner-uno/card_writer/` is a second,
+standalone Uno sketch (same RC522 wiring as the scanner) that writes/reads this format over a
+simple serial line protocol (`WRITE,<phone>,<id>,<name>`, `READ`), verifying every write by reading
+it back before reporting success. `scanner-uno/card_writer/card_writer_gui.py` is the enrollment
+GUI (Tkinter + pyserial) office staff actually use: pick the serial port, fill in phone/ID/name,
+tap Write, hold the card on the reader. Both the writer sketch and `card.cpp` hold their own copy
+of `CARD_KEY_A` and the CRC8 algorithm — they have to match byte-for-byte or writes and reads
+silently disagree; there's a comment at each copy saying so.
+
+Not yet done: `CARD_KEY_A` is currently a placeholder ASCII-derived key (spells "ESPTRK"), not a
+randomly generated one — fine for a demo, worth regenerating before any real deployment. The write
+protocol also has no retry/backoff of its own; the GUI just reports the Arduino's error code
+(`NO_CARD`, `AUTH_FAIL`, `WRITE_FAIL`, `VERIFY_MISMATCH`, ...) and expects the operator to retry by
+hand, which is fine for a supervised enrollment desk but wouldn't scale to unattended use.
+
+**Status: write + read verified end to end on real hardware**, including the scanner's own
+`card::read()` — not a reimplementation of it. `card_writer` wrote a card
+(`+639171234567` / id 7 / "WupaTest"), then `selftest_card/` (a new standalone sketch, same pattern
+as the other `selftest_*/` folders, built by copying `card.cpp`/`reader.cpp`/`card.h`/`reader.h`
+verbatim from `../src/` rather than re-deriving the logic) read it back on the same physical Uno
+and printed exactly that data — proof the writer and the scanner genuinely agree on the wire
+format, keys, and CRC, not just that each independently believes it does. Getting there took three
+real bugs, all
+found only by testing against physical cards rather than by reading the library source — the same
+lesson as §1b's RAM-margin saga, just for RFID this time:
+
+- **No key fallback on first write.** The very first version only ever tried `CARD_KEY_A` — but a
+  factory-fresh MIFARE card ships keyed `FFFFFFFFFFFF`, so it could never authenticate a genuinely
+  blank card, only one already written by this same program. Fixed by trying `CARD_KEY_A` first,
+  then the factory default, and always rewriting the sector trailer to `CARD_KEY_A` afterward
+  (transport-default access bits, only the keys change) so the card authenticates directly next
+  time.
+- **A failed key attempt poisons the next one.** Once the fallback above existed, it *still* failed
+  against a genuinely blank card — `PCD_StopCrypto1()` between the two key attempts wasn't enough
+  to recover the MFRC522's crypto engine after the first (expected) failure. Confirmed by a stock
+  single-key MFRC522 example sketch, which never fails once and always succeeds, against our
+  two-key version, which failed its second attempt every time. Fixed with a full halt + re-wake +
+  re-select (`reselectCard()`) between candidate keys, not just `StopCrypto1()`.
+- **REQA doesn't wake a halted card.** `PICC_IsNewCardPresent()` sends REQA, which per ISO 14443-3
+  a halted card ignores — only WUPA (or physically leaving and re-entering the RF field) wakes it.
+  Every command halts the card when it's done (`releaseCard()`), so with the same physical card
+  never lifted between a write and a read (the natural way to test at a desk), the read's
+  card-detection step never saw it again — `ERR:NO_CARD` every time despite the card visibly
+  sitting on the reader. Fixed by switching `waitForCard()` to `PICC_WakeupA()`, which wakes a card
+  from either state. (This distinction doesn't matter for the scanner's own `reader.cpp` — there, a
+  continuously-held card simply not re-triggering until lifted is the *correct* behavior for
+  attendance taps, so that file was left alone.)
+
+---
+
 ## 2. Phase 1 — SOS pipeline (build this first)
 
 ### 2.1 Button handling

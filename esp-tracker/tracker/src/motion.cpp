@@ -2,6 +2,7 @@
 #include "modem.h"
 #include "../include/config.h"
 #include <WiFi.h>
+#include <string.h>
 
 namespace motion {
 
@@ -18,6 +19,11 @@ static uint8_t  s_prevN = 0;
 
 static uint32_t s_prevCellId = 0;
 static int8_t   s_prevCsq    = 0;
+
+// Raw scan data for WiFi reporting — BSSID, RSSI, SSID for each visible AP.
+static constexpr uint8_t MAX_SCAN_APS = 8;
+static ScanAp  s_scanAp[MAX_SCAN_APS];
+static uint8_t s_scanApN = 0;
 
 static uint32_t hashBssid(const uint8_t* mac) {
     uint32_t h = 2166136261u;                    // FNV-1a
@@ -51,8 +57,20 @@ static void tierWifi() {
 
     uint32_t cur[MOTION_MAX_APS];
     uint8_t  curN = 0;
-    for (int i = 0; i < n && curN < MOTION_MAX_APS; i++)
+    s_scanApN = 0;
+    for (int i = 0; i < n && curN < MOTION_MAX_APS; i++) {
         cur[curN++] = hashBssid(WiFi.BSSID(i));
+        // Capture raw data for WiFi reporting (up to MAX_SCAN_APS)
+        if (s_scanApN < MAX_SCAN_APS) {
+            const uint8_t* mac = WiFi.BSSID(i);
+            memcpy(s_scanAp[s_scanApN].bssid, mac, 6);
+            s_scanAp[s_scanApN].rssi = WiFi.RSSI(i);
+            const char* ssid = WiFi.SSID(i).c_str();
+            strncpy(s_scanAp[s_scanApN].ssid, ssid, sizeof(s_scanAp[0].ssid) - 1);
+            s_scanAp[s_scanApN].ssid[sizeof(s_scanAp[0].ssid) - 1] = '\0';
+            s_scanApN++;
+        }
+    }
     WiFi.scanDelete();
 
     // No APs at all and no cell movement: we genuinely cannot tell. Say so
@@ -110,5 +128,7 @@ void service() {
 MotionState state()      { return s_state; }
 uint32_t    stableFor()  { return millis() - s_changedAt; }
 bool        blind()      { return s_blind; }
+const ScanAp* lastScan() { return s_scanAp; }
+uint8_t     lastScanCount() { return s_scanApN; }
 
 }

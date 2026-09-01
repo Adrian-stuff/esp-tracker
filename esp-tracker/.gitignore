@@ -1,0 +1,19 @@
+# PlatformIO build artifacts
+.pio/
+.pio-venv/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# macOS
+.DS_Store
+
+# SQLite dev databases
+*.db
+*.db-shm
+*.db-wal
+
+# Environment secrets
+.env

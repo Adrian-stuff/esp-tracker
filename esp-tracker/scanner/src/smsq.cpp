@@ -45,11 +45,21 @@ bool begin() {
     // Not fitted yet: stay out of the way entirely rather than pulsing PWRKEY
     // into thin air and polling a UART nobody is on.
     if (!SIM900_PRESENT) { s_st = St::Idle; s_ready = false; return false; }
+
+    // GPIO32 (PWRKEY) floats during ESP32 boot, randomly toggling the SIM900.
+    // Hold it HIGH immediately to prevent that. We only pulse LOW later if the
+    // modem fails to respond to AT.
     pinMode(PIN_SIM_PWRKEY, OUTPUT);
-    // SIM900 PWRKEY: hold low ~1.2 s to toggle power.
-    digitalWrite(PIN_SIM_PWRKEY, LOW);  delay(1200);
     digitalWrite(PIN_SIM_PWRKEY, HIGH);
+
     Sim.begin(9600, SERIAL_8N1, PIN_SIM_RX, PIN_SIM_TX);
+
+    // Cancel any pending AT+CMGS state — a previous failed send can leave the
+    // modem waiting for a body or Ctrl-Z, and every subsequent AT returns "> ".
+    Sim.write(0x1B); delay(200);
+    Sim.write(0x1B); delay(200);
+    while (Sim.available()) Sim.read();
+
     s_st = St::Boot;
     s_at = millis();
     return true;
@@ -58,6 +68,8 @@ bool begin() {
 bool   ready()  { return s_ready; }
 size_t depth()  { return s_count; }
 int8_t signalQuality() { return s_csq; }
+HardwareSerial& serial() { return Sim; }
+bool isIdle() { return s_st == St::Idle; }
 
 bool enqueue(const char* number, const char* text, const char* ref) {
     if (!SIM900_PRESENT) return false;
@@ -91,13 +103,30 @@ void service() {
 
     switch (s_st) {
     case St::Boot:
-        if (now - s_at < 4000) return;          // let the module come up
-        write("ATE0");                          // no echo, so parsing stays simple
-        delay(60);
-        write("AT+CMGF=1");                     // text mode, not PDU
-        delay(60);
-        s_rx = ""; write("AT+CREG?");
-        s_st = St::Idle; s_at = now; s_lastReg = now;
+        // First pass: let the module stabilize, then probe with AT.
+        // If the modem was already on (common after ESP32 reset — PWRKEY
+        // held HIGH to prevent floating), it responds immediately and we
+        // skip the power cycle entirely. The ESC bytes in begin() already
+        // cleared any stuck AT+CMGS state.
+        if (now - s_at < 3000) return;          // let the module stabilize
+        if (now - s_at < 6000) {
+            s_rx = ""; write("AT");
+            return;                             // wait for response next call
+        }
+        if (sawAny("OK", "+CREG")) {
+            // Modem already on — configure and go
+            s_rx = "";
+            write("ATE0");
+            write("AT+CMGF=1");
+            s_rx = ""; write("AT+CREG?");
+            s_st = St::Idle; s_at = now; s_lastReg = now;
+            return;
+        }
+        // No response after 6 s — power cycle via PWRKEY toggle
+        s_rx = "";
+        digitalWrite(PIN_SIM_PWRKEY, LOW);  delay(1200);
+        digitalWrite(PIN_SIM_PWRKEY, HIGH);
+        s_st = St::Boot; s_at = now;             // re-enter, re-probe after 6 s
         return;
 
     case St::Idle: {

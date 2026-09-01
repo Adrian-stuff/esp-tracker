@@ -118,8 +118,20 @@ bool begin() {
 bool attach()        { return false; }
 bool attached()      { return false; }
 
-void sleep() { digitalWrite(PIN_MODEM_DTR, HIGH); }   // AT+CSCLK=1 itself: TODO, needs attach() first to matter
-void wake()  { digitalWrite(PIN_MODEM_DTR, LOW); delay(50); }
+void sleep() {
+    // AT+CSCLK=1 enables sleep mode. DTR HIGH = sleep, LOW = wake.
+    // The modem stays attached while sleeping — a cold GSM attach costs 5-15s,
+    // and for a safety device latency beats runtime.
+    digitalWrite(PIN_MODEM_DTR, HIGH);
+    if (MODEM_USE_CSCLK) atCmd("AT+CSCLK=1", "OK", 1000);
+}
+
+void wake() {
+    digitalWrite(PIN_MODEM_DTR, LOW);
+    delay(50);
+    // Send a dummy AT to wake the modem from CSCLK sleep
+    atCmd("AT", "OK", 1000);
+}
 
 int  postJson(const char* path, const char* json) { (void)path;(void)json; return -1; } // see file header — no GPRS to send it over
 void closeIdle()     { }                // no-op without attach()

@@ -171,11 +171,14 @@ async def ingest_taps(batch: TapBatch, device=Depends(auth.current_device)):
 async def relay_sms(body: RelayedSms, device=Depends(auth.current_device)):
     """A scanner forwarding one SMS its own modem received — see
     scanner-uno/sms_scanner/src/modem.h's pollSms() and
-    scanner-uno/dashboard/app.py. Currently the only thing this recognises
-    is a tracker's routine "LOC ..." report (see tracker_sms.py) — this is
-    NOT a general inbound-SMS webhook; anything else texted to a scanner's
-    number is accepted (so the scanner doesn't need to guess what matters)
-    but otherwise ignored.
+    scanner-uno/dashboard/app.py. Handles two tracker SMS formats:
+
+    1. LOC — routine position report (see tracker_sms.parse())
+    2. WIFISCAN — WiFi BSSID scan for server-side place matching
+       (see tracker_sms.parse_wifi_scan())
+
+    Anything else is accepted (so the scanner doesn't need to guess what
+    matters) but ignored.
 
     Authenticated as the SCANNER (its own bearer token, same as
     ingest_taps) — that proves WHICH scanner relayed this, not that the SMS
@@ -189,31 +192,69 @@ async def relay_sms(body: RelayedSms, device=Depends(auth.current_device)):
     now = _now()
     received_at = body.received_at or now
 
+    # Try LOC format first
     parsed = tracker_sms.parse(body.text)
-    if not parsed:
-        return {"ok": True, "handled": False}
-    source, lat, lon, acc, recorded_at = parsed
+    if parsed:
+        source, lat, lon, acc, recorded_at = parsed
 
-    tracker = db.one("SELECT id FROM devices WHERE msisdn=? AND kind='tracker' AND active=1",
-                     (body.sender,))
-    if not tracker:
-        return {"ok": True, "handled": False}   # unrecognised sender — don't leak which numbers ARE known
+        tracker = db.one("SELECT id FROM devices WHERE msisdn=? AND kind='tracker' AND active=1",
+                         (body.sender,))
+        if not tracker:
+            return {"ok": True, "handled": False}
 
-    event_id = f"{tracker['id']}-{recorded_at}"   # idempotent: a relay retry can't double-insert
-    try:
-        db.execute(
-            """INSERT INTO locations (event_id,device_id,lat,lon,accuracy_m,source,
-                                      recorded_at,received_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (event_id, tracker["id"], lat, lon, acc, source, recorded_at, received_at))
-    except sqlite3.IntegrityError:
-        return {"ok": True, "handled": True, "duplicate": True}
+        event_id = f"{tracker['id']}-{recorded_at}"
+        try:
+            db.execute(
+                """INSERT INTO locations (event_id,device_id,lat,lon,accuracy_m,source,
+                                          recorded_at,received_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (event_id, tracker["id"], lat, lon, acc, source, recorded_at, received_at))
+        except sqlite3.IntegrityError:
+            return {"ok": True, "handled": True, "duplicate": True}
 
-    db.execute("UPDATE devices SET last_seen_at=? WHERE id=?", (received_at, tracker["id"]))
-    await hub.broadcast("location", {
-        "device_id": tracker["id"], "lat": lat, "lon": lon,
-        "accuracy_m": acc, "source": source, "recorded_at": recorded_at})
-    return {"ok": True, "handled": True}
+        db.execute("UPDATE devices SET last_seen_at=? WHERE id=?", (received_at, tracker["id"]))
+        await hub.broadcast("location", {
+            "device_id": tracker["id"], "lat": lat, "lon": lon,
+            "accuracy_m": acc, "source": source, "recorded_at": recorded_at})
+        return {"ok": True, "handled": True}
+
+    # Try WIFISCAN format
+    wifi_parsed = tracker_sms.parse_wifi_scan(body.text)
+    if wifi_parsed:
+        recorded_at, aps = wifi_parsed
+
+        tracker = db.one("SELECT id FROM devices WHERE msisdn=? AND kind='tracker' AND active=1",
+                         (body.sender,))
+        if not tracker:
+            return {"ok": True, "handled": False}
+
+        # Match against known places
+        place, place_id = geolocate.match_known_place(tracker["id"], aps)
+
+        # Store the scan for the dashboard
+        geolocate.record_scan(tracker["id"], aps, recorded_at, place_id)
+
+        # If a known place matched, also store a location entry
+        if place:
+            event_id = f"{tracker['id']}-wifi-{recorded_at}"
+            try:
+                db.execute(
+                    """INSERT INTO locations (event_id,device_id,lat,lon,accuracy_m,source,
+                                              recorded_at,received_at,place_id)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (event_id, tracker["id"], place["lat"], place["lon"],
+                     place["accuracy_m"], place["source"],
+                     recorded_at, received_at, place_id))
+            except sqlite3.IntegrityError:
+                pass
+
+        db.execute("UPDATE devices SET last_seen_at=? WHERE id=?", (received_at, tracker["id"]))
+        await hub.broadcast("wifi_scan", {
+            "device_id": tracker["id"], "recorded_at": recorded_at,
+            "ap_count": len(aps), "place": place})
+        return {"ok": True, "handled": True}
+
+    return {"ok": True, "handled": False}
 
 
 async def notify_tap(tap, card, direction: str) -> None:

@@ -36,4 +36,8 @@ namespace store {
 
     size_t   depth();
     uint32_t backoff_ms(uint8_t attempts);
+
+    // Drain the queue by sending events via SMS. Tries one event per call,
+    // respects backoff, and acks on success. Non-blocking — call from loop().
+    void drain();
 }

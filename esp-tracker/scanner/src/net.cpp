@@ -7,22 +7,62 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <WiFiManager.h>
 
 static uint32_t s_lastTry  = 0;
 static uint32_t s_backoff  = 2000;
+static bool     s_portalActive = false;
+static WiFiManager s_wm;
+
+// Custom parameters for the config portal
+static WiFiManagerParameter s_paramApi("api", "API Base URL", API_BASE, 64);
+static WiFiManagerParameter s_paramToken("token", "Device Token", DEVICE_TOKEN, 64);
+
+// Called when credentials are saved via the portal
+static void saveCallback() {
+    Serial.println(F("[net] Portal: saved, rebooting..."));
+    delay(500);
+    ESP.restart();
+}
 
 namespace net {
 
 void begin() {
-    WiFi.mode(WIFI_STA);
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.setHostname("tracker-scanner");
+
+    // Set config portal callback
+    s_wm.setSaveConfigCallback(saveCallback);
+
+    // Add custom parameters to the portal
+    s_wm.addParameter(&s_paramApi);
+    s_wm.addParameter(&s_paramToken);
+
+    // Portal settings
+    s_wm.setConfigPortalTimeout(WIFI_AP_TIMEOUT_S);
+    s_wm.setMinimumSignalQuality(15);
+
+    // Try to connect with saved credentials.
+    // autoConnect() starts the AP if no saved creds or connection fails.
+    // The AP stays up on 192.168.4.1 even after STA connects.
+    Serial.println(F("[net] Starting WiFiManager..."));
+    if (!s_wm.autoConnect(AP_SSID, AP_PASS)) {
+        Serial.println(F("[net] Portal timed out, rebooting..."));
+        delay(1000);
+        ESP.restart();
+    }
+
+    // If we get here, either we connected to saved creds or the user saved new ones.
+    s_portalActive = false;
     WiFi.setAutoReconnect(true);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    // NOTE: school networks are often WPA2-Enterprise or behind a captive
-    // portal, neither of which an ESP32 handles gracefully. Settle the VLAN
-    // with the IT contact before building the enclosure — see README.
+
+    Serial.printf("[net] Connected to %s, IP=%s\n",
+                  WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
 bool online() { return WiFi.status() == WL_CONNECTED; }
+
+bool portalActive() { return s_portalActive; }
 
 void service() {
     if (online()) { s_backoff = 2000; return; }
@@ -30,8 +70,10 @@ void service() {
     if (now - s_lastTry < s_backoff) return;
     s_lastTry = now;
     s_backoff = s_backoff < 60000 ? s_backoff * 2 : 60000;
+
+    // If disconnected, try reconnecting with saved creds
     WiFi.disconnect();
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    WiFi.begin();  // uses saved credentials from NVS
 }
 
 size_t drain() {
@@ -48,35 +90,49 @@ size_t drain() {
         t["id"]          = batch[i].id;
         t["card_uid"]    = batch[i].uid;
         t["recorded_at"] = batch[i].recorded_at;
-        // The scanner texts the parent itself on the SIM900. Telling the server
-        // means it skips its own message, so one tap is never two texts.
         t["device_sms_sent"] = batch[i].sms_sent;
-        // Direction is NOT sent. The server infers it from the card's own
-        // history that day, which is the only place that survives this device
-        // rebooting, and the only place that can reorder taps that were
-        // buffered offline and arrived late.
     }
     String body;
     serializeJson(doc, body);
 
-    // Plain HTTP against a laptop on the LAN during local dev; TLS in
-    // production. Never ship API_USE_TLS = false to anything off your bench —
-    // these are a child's movements in clear text.
     WiFiClient      plain;
     WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setInsecure();   // TODO: pin the CA before production
-    Client& client = API_USE_TLS ? (Client&)tls : (Client&)plain;
+    if (API_USE_TLS) tls.setInsecure();
+    WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;
-    if (!http.begin(client, String(API_BASE) + "/functions/v1/ingest")) return 0;
+    if (!http.begin(client, String(API_BASE) + "/api/ingest/taps")) return 0;
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", String("Bearer ") + DEVICE_TOKEN);
     int code = http.POST(body);
     http.end();
 
-    if (code != 200) return 0;      // stays queued; the next pass retries
-    store::commit(n);               // 200 IS the ack
+    if (code != 200) return 0;
+    store::commit(n);
     return n;
+}
+
+bool postRelaySms(const char* sender, const char* text) {
+    if (!online()) return false;
+
+    JsonDocument doc;
+    doc["sender"] = sender;
+    doc["text"]   = text;
+    String body;
+    serializeJson(doc, body);
+
+    WiFiClient      plain;
+    WiFiClientSecure tls;
+    if (API_USE_TLS) tls.setInsecure();
+    WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
+
+    HTTPClient http;
+    if (!http.begin(client, String(API_BASE) + "/api/relay/sms")) return false;
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", String("Bearer ") + DEVICE_TOKEN);
+    int code = http.POST(body);
+    http.end();
+    return code == 200;
 }
 
 }

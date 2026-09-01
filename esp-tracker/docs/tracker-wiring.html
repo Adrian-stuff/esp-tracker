@@ -1,0 +1,497 @@
+<title>Tracker Wiring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700&family=IBM+Plex+Serif:wght@400;600&display=swap">
+
+<style>
+:root{
+  --ground:#EDF0F4; --surface:#FFFFFF; --surface-2:#F5F7FA; --surface-3:#E7ECF2;
+  --ink:#141A21; --ink-2:#4C5866; --ink-3:#6D7B8B;
+  --line:#CFD8E2; --line-2:#E2E8F0;
+  --uart:#2F6FB0; --gpio:#4C5866; --pwr:#B93630; --warn:#8A6212;
+  --gps:#0B6E68; --modem:#2F6FB0;
+  --pwr-soft:#FAE8E6; --warn-soft:#FBF0DC; --ok:#2C6E4E; --ok-soft:#E2F0E8;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --serif:"IBM+Plex+Serif",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+    --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+    --line:#2B3641; --line-2:#222C36;
+    --uart:#6BA9E6; --gpio:#A7B3C1; --pwr:#F0776F; --warn:#D9A441;
+    --gps:#46C3B3; --modem:#6BA9E6;
+    --pwr-soft:#3A1D1B; --warn-soft:#332812; --ok:#63C48F; --ok-soft:#123023;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1318; --surface:#161D25; --surface-2:#1B242E; --surface-3:#232E3A;
+  --ink:#E5EBF2; --ink-2:#A7B3C1; --ink-3:#818E9C;
+  --line:#2B3641; --line-2:#222C36;
+  --uart:#6BA9E6; --gpio:#A7B3C1; --pwr:#F0776F; --warn:#D9A441;
+  --gps:#46C3B3; --modem:#6BA9E6;
+  --pwr-soft:#3A1D1B; --warn-soft:#332812; --ok:#63C48F; --ok-soft:#123023;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--serif);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1060px;margin:0 auto;padding:0 26px 90px}
+.prose{max-width:70ch}
+header.mast{border-bottom:2px solid var(--ink);padding:56px 0 24px;margin-bottom:18px;display:flex;flex-direction:column;gap:14px}
+.eyebrow{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:var(--gps);display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.eyebrow .sep{width:4px;height:4px;border-radius:50%;background:var(--line)}
+h1{font-family:var(--sans);font-weight:700;font-size:clamp(30px,4.4vw,44px);line-height:1.05;letter-spacing:-.028em;margin:0}
+.standfirst{font-size:17px;color:var(--ink-2);max-width:62ch;margin:0}
+h2{font-family:var(--sans);font-weight:600;font-size:21px;letter-spacing:-.016em;margin:0}
+section{margin-top:48px;display:flex;flex-direction:column;gap:16px}
+p{margin:0}
+.sec-head{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--line);padding-bottom:9px}
+.sec-num{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--ink-3);text-transform:uppercase}
+code{font-family:var(--mono);font-size:.87em;background:var(--surface-3);padding:1px 5px;border-radius:2px;color:var(--ink)}
+
+.danger{background:var(--pwr-soft);border:1px solid var(--pwr);border-left-width:4px;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.danger .tag{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--pwr)}
+.danger p{font-size:15px;color:var(--ink-2);max-width:72ch}
+.danger b{color:var(--ink)}
+.caution{background:var(--warn-soft);border:1px solid var(--warn);border-left-width:4px;padding:18px 20px;display:flex;flex-direction:column;gap:8px}
+.caution .tag{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--warn)}
+.caution p{font-size:14.5px;color:var(--ink-2);max-width:72ch}
+
+figure{margin:0;display:flex;flex-direction:column;gap:12px}
+.canvas{background:var(--surface);border:1px solid var(--line);padding:20px;overflow-x:auto}
+.canvas svg{display:block;height:auto;max-width:100%}
+figcaption{font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--ink-3);max-width:78ch}
+figcaption b{color:var(--ink-2)}
+
+.legend{display:flex;flex-wrap:wrap;gap:14px;background:var(--surface-2);border:1px solid var(--line-2);padding:13px 16px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+.legend span{display:flex;align-items:center;gap:7px}
+.legend i{width:16px;height:3px;border-radius:2px;display:inline-block}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-family:var(--sans);font-size:13.5px}
+th{text-align:left;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);padding:11px 14px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line-2);color:var(--ink-2);vertical-align:top;line-height:1.45}
+td:first-child{color:var(--ink);font-weight:500}
+tr:last-child td{border-bottom:none}
+.gp{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+.bus{display:inline-block;font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:2px;letter-spacing:.05em}
+.bus.uart{background:color-mix(in srgb,var(--uart) 16%,transparent);color:var(--uart)}
+.bus.gpio{background:color-mix(in srgb,var(--gpio) 16%,transparent);color:var(--gpio)}
+.bus.pwr{background:var(--pwr-soft);color:var(--pwr)}
+.bus.gps{background:color-mix(in srgb,var(--gps) 16%,transparent);color:var(--gps)}
+
+.steps{display:flex;flex-direction:column;border:1px solid var(--line);background:var(--surface)}
+.step{display:grid;grid-template-columns:34px 1fr;gap:16px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
+.step:last-child{border-bottom:none}
+.step .n{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--gps)}
+.step .b{display:flex;flex-direction:column;gap:4px}
+.step .t{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--ink)}
+.step .d{font-size:13.5px;color:var(--ink-2);line-height:1.5}
+
+footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--ink-3);line-height:1.7;max-width:72ch}
+:focus-visible{outline:2px solid var(--gps);outline-offset:3px}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow"><span>Wearable tracker</span><span class="sep"></span><span>ESP32 &middot; NEO-6M &middot; SIM800L &middot; TP4056</span></div>
+  <h1>Tracker Wiring</h1>
+  <p class="standfirst">Pin-for-pin against <code>tracker/include/pins.h</code>. Power first &mdash;
+  that is what kills these builds, and the failure looks like a firmware bug for days.</p>
+</header>
+
+<div class="danger">
+  <div class="tag">Read before connecting anything</div>
+  <p><b>The SIM800L draws up to 2&nbsp;A in transmit bursts at 3.4&ndash;4.4&nbsp;V.</b> It cannot
+  run from the ESP32's 3V3 pin, from the DevKit's 5V pin, or from the TP4056 output.
+  Wire it <b>directly to the LiPo battery</b>, which sits happily in that voltage range.</p>
+  <p>Fit a <b>1000&ndash;2200&nbsp;&mu;F electrolytic across the SIM800L's VCC/GND,
+  physically close to the module</b>. Without it the TX burst browns out the rail, the ESP32 resets,
+  and you spend a weekend blaming the firmware.</p>
+  <p><b>The NEO-6M is 3.3&nbsp;V only.</b> 5&nbsp;V kills it. The SIM800L RX is not 3.3&nbsp;V
+  tolerant &mdash; level-shift the ESP32 TX line.</p>
+</div>
+
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>Connection diagram</h2></div>
+  <div class="legend">
+    <span><i style="background:var(--uart)"></i>UART1 &mdash; GPS</span>
+    <span><i style="background:var(--modem)"></i>UART2 &mdash; SIM800L</span>
+    <span><i style="background:var(--pwr)"></i>Power</span>
+    <span><i style="background:var(--gpio)"></i>GPIO / control</span>
+    <span><i style="background:var(--pwr);height:0;border-top:3px dashed var(--pwr)"></i>Needs level shifting</span>
+  </div>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 1000 700" style="min-width:760px" role="img" aria-label="Tracker connection diagram. An ESP32 DevKit sits centre. On the left a NEO-6M GPS connects over UART1 on GPIO 25 and 26, with a MOSFET power gate on GPIO 27. On the right a SIM800L modem connects over UART2, its TX to GPIO 16 and its RX to GPIO 17 through a level shifter, with DTR on GPIO 19 and a MOSFET power gate on GPIO 32. PWRKEY is tied to GND internally so the module auto-powers on. Below the ESP32, an SOS button connects to GPIO 33, an LED to GPIO 13 through a 220 ohm resistor, and a piezo buzzer to GPIO 12. A TP4056 charges a LiPo battery which powers the SIM800L directly.">
+        <defs>
+          <marker id="w-uart1" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--uart)"/></marker>
+          <marker id="w-uart2" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--modem)"/></marker>
+          <marker id="w-pwr" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--pwr)"/></marker>
+          <marker id="w-gpio" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6" orient="auto"><polygon points="0,0 10,4 0,8" fill="var(--gpio)"/></marker>
+        </defs>
+
+        <!-- NEO-6M -->
+        <rect x="55" y="160" width="185" height="175" rx="4" fill="var(--surface)" stroke="var(--gps)" stroke-width="1.5"/>
+        <text x="70" y="188" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">NEO-6M GPS</text>
+        <text x="70" y="206" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">4-pin &middot; 9600 baud</text>
+        <text x="70" y="224" font-family="var(--mono)" font-size="10" font-weight="600" fill="var(--gps)">3.3 V ONLY</text>
+        <text x="70" y="242" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">V_BCKP always powered</text>
+
+        <!-- GPS lines -->
+        <line x1="240" y1="278" x2="384" y2="278" stroke="var(--uart)" stroke-width="2" marker-end="url(#w-uart1)"/>
+        <line x1="240" y1="304" x2="384" y2="304" stroke="var(--uart)" stroke-width="2" marker-end="url(#w-uart1)"/>
+        <text x="252" y="273" font-family="var(--mono)" font-size="10.5" fill="var(--uart)">TX &rarr; 25</text>
+        <text x="252" y="299" font-family="var(--mono)" font-size="10.5" fill="var(--uart)">RX &larr; 26</text>
+
+        <!-- GPS power -->
+        <line x1="240" y1="330" x2="384" y2="330" stroke="var(--pwr)" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#w-pwr)"/>
+        <text x="252" y="325" font-family="var(--mono)" font-size="10.5" fill="var(--pwr)">EN &rarr; 27</text>
+
+        <!-- ESP32 -->
+        <rect x="390" y="150" width="220" height="400" rx="4" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="2"/>
+        <text x="500" y="180" text-anchor="middle" font-family="var(--sans)" font-size="15" font-weight="700" fill="var(--ink)">ESP32 DevKit v1</text>
+        <text x="500" y="199" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="var(--ink-3)">WROOM-32</text>
+        <line x1="410" y1="212" x2="590" y2="212" stroke="var(--line)" stroke-width="1"/>
+
+        <!-- SIM800L -->
+        <rect x="760" y="160" width="190" height="210" rx="4" fill="var(--surface)" stroke="var(--modem)" stroke-width="1.5"/>
+        <text x="775" y="188" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">SIM800L</text>
+        <text x="775" y="206" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">2G &middot; SMS + GPRS</text>
+        <text x="775" y="224" font-family="var(--mono)" font-size="10" font-weight="600" fill="var(--pwr)">LiPo direct (3.7&ndash;4.2 V)</text>
+        <text x="775" y="242" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">1000&ndash;2200 &micro;F cap required</text>
+        <text x="775" y="260" font-family="var(--mono)" font-size="10" fill="var(--ok)">PWRKEY to GND &mdash; auto-powers on</text>
+
+        <!-- Modem lines -->
+        <line x1="754" y1="296" x2="616" y2="296" stroke="var(--modem)" stroke-width="2" marker-end="url(#w-uart2)"/>
+        <line x1="616" y1="322" x2="754" y2="322" stroke="var(--pwr)" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#w-pwr)"/>
+        <line x1="754" y1="348" x2="616" y2="348" stroke="var(--gpio)" stroke-width="1.5" marker-end="url(#w-gpio)"/>
+        <line x1="754" y1="374" x2="616" y2="374" stroke="var(--gpio)" stroke-width="1.5" marker-end="url(#w-gpio)"/>
+        <text x="628" y="291" font-family="var(--mono)" font-size="10.5" fill="var(--modem)">16 &larr; TX</text>
+        <text x="628" y="317" font-family="var(--mono)" font-size="10.5" font-weight="600" fill="var(--pwr)">17 &rarr; RX  shift!</text>
+        <text x="628" y="343" font-family="var(--mono)" font-size="10.5" fill="var(--gpio)">19 &rarr; DTR</text>
+
+        <!-- Modem power gate -->
+        <line x1="616" y1="400" x2="754" y2="400" stroke="var(--gpio)" stroke-width="1.5" marker-end="url(#w-gpio)"/>
+        <text x="628" y="395" font-family="var(--mono)" font-size="10.5" fill="var(--gpio)">32 &rarr; EN (MOSFET)</text>
+
+        <!-- Human interface -->
+        <rect x="55" y="400" width="185" height="185" rx="4" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+        <text x="70" y="426" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">Human Interface</text>
+        <text x="70" y="444" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">button, LED, piezo</text>
+
+        <line x1="240" y1="470" x2="384" y2="470" stroke="var(--gpio)" stroke-width="1.5" marker-end="url(#w-gpio)"/>
+        <line x1="240" y1="500" x2="384" y2="500" stroke="var(--gpio)" stroke-width="1.5" marker-end="url(#w-gpio)"/>
+        <line x1="240" y1="530" x2="384" y2="530" stroke="var(--gpio)" stroke-width="1.5" marker-end="url(#w-gpio)"/>
+        <text x="252" y="465" font-family="var(--mono)" font-size="10.5" fill="var(--gpio)">33 &larr; SOS btn</text>
+        <text x="252" y="495" font-family="var(--mono)" font-size="10.5" fill="var(--gpio)">13 &larr; LED</text>
+        <text x="252" y="525" font-family="var(--mono)" font-size="10.5" fill="var(--gpio)">12 &larr; Piezo</text>
+
+        <!-- Power section -->
+        <rect x="200" y="520" width="600" height="160" rx="4" fill="var(--pwr-soft)" stroke="var(--pwr)" stroke-width="1.5"/>
+        <text x="218" y="548" font-family="var(--sans)" font-size="14" font-weight="600" fill="var(--ink)">Power Architecture</text>
+
+        <!-- TP4056 -->
+        <rect x="228" y="568" width="140" height="80" rx="3" fill="var(--surface)" stroke="var(--pwr)" stroke-width="1"/>
+        <text x="242" y="590" font-family="var(--sans)" font-size="11" font-weight="600" fill="var(--ink)">TP4056</text>
+        <text x="242" y="606" font-family="var(--mono)" font-size="9.5" fill="var(--ink-3)">USB 5V in</text>
+        <text x="242" y="620" font-family="var(--mono)" font-size="9.5" fill="var(--ink-3)">Charges LiPo</text>
+        <text x="242" y="634" font-family="var(--mono)" font-size="9.5" fill="var(--pwr)">Does NOT power SIM800L</text>
+
+        <!-- LiPo -->
+        <rect x="430" y="568" width="140" height="80" rx="3" fill="var(--surface)" stroke="var(--pwr)" stroke-width="1.5"/>
+        <text x="444" y="590" font-family="var(--sans)" font-size="11" font-weight="600" fill="var(--ink)">LiPo Battery</text>
+        <text x="444" y="606" font-family="var(--mono)" font-size="9.5" fill="var(--ink-3)">2500&ndash;3000 mAh</text>
+        <text x="444" y="620" font-family="var(--mono)" font-size="9.5" fill="var(--ink-3)">3.7&ndash;4.2 V nominal</text>
+        <text x="444" y="634" font-family="var(--mono)" font-size="9.5" fill="var(--pwr)">Powers everything</text>
+
+        <!-- Power rails -->
+        <rect x="640" y="568" width="140" height="80" rx="3" fill="var(--surface)" stroke="var(--pwr)" stroke-width="1"/>
+        <text x="654" y="590" font-family="var(--sans)" font-size="11" font-weight="600" fill="var(--ink)">Power Rails</text>
+        <text x="654" y="606" font-family="var(--mono)" font-size="9.5" fill="var(--pwr)">LiPo &rarr; SIM800L VCC</text>
+        <text x="654" y="620" font-family="var(--mono)" font-size="9.5" fill="var(--ink-3)">3V3 &rarr; ESP32 + NEO-6M</text>
+        <text x="654" y="634" font-family="var(--mono)" font-size="9.5" fill="var(--ink-3)">All grounds common</text>
+
+        <!-- Power flow arrows -->
+        <line x1="368" y1="608" x2="424" y2="608" stroke="var(--pwr)" stroke-width="2" marker-end="url(#w-pwr)"/>
+        <line x1="570" y1="608" x2="634" y2="608" stroke="var(--pwr)" stroke-width="2" marker-end="url(#w-pwr)"/>
+
+        <!-- Power to ESP32 -->
+        <line x1="500" y1="476" x2="500" y2="514" stroke="var(--pwr)" stroke-width="2" marker-end="url(#w-pwr)"/>
+
+        <!-- Power to SIM800L -->
+        <polyline points="710,648 855,648 855,380" fill="none" stroke="var(--pwr)" stroke-width="2.5" marker-end="url(#w-pwr)"/>
+        <text x="862" y="480" font-family="var(--mono)" font-size="10" font-weight="600" fill="var(--pwr)">LiPo direct</text>
+
+        <!-- Power to NEO-6M -->
+        <polyline points="290,648 148,648 148,335" fill="none" stroke="var(--pwr)" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#w-pwr)"/>
+        <text x="60" y="480" font-family="var(--mono)" font-size="10" fill="var(--pwr)">3.3 V</text>
+      </svg>
+    </div>
+    <figcaption><b>The SIM800L has its own power path directly from the LiPo.</b> The TP4056 charges
+    the battery but does not power the modem &mdash; the battery is the supply. The 3.3 V rail
+    feeds only the ESP32 and NEO-6M. All grounds must be tied together.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>Connection table</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Module</th><th>Module pin</th><th>ESP32</th><th>Bus</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>NEO-6M</td><td>TX</td><td class="gp">GPIO 25</td><td><span class="bus uart">UART1</span></td><td>GPS data &rarr; ESP32. 9600 baud</td></tr>
+        <tr><td>NEO-6M</td><td>RX</td><td class="gp">GPIO 26</td><td><span class="bus uart">UART1</span></td><td>ESP32 &rarr; GPS config</td></tr>
+        <tr><td>NEO-6M</td><td>VCC / GND</td><td class="gp">3V3 / GND</td><td><span class="bus pwr">PWR</span></td><td><b>3.3 V only. 5 V kills it</b></td></tr>
+        <tr><td>NEO-6M</td><td>EN (MOSFET)</td><td class="gp">GPIO 27</td><td><span class="bus gpio">GPIO</span></td><td>Power gate. V_BCKP stays powered always</td></tr>
+        <tr><td>SIM800L</td><td>TXD</td><td class="gp">GPIO 16</td><td><span class="bus uart">UART2</span></td><td>~2.8 V out reads as HIGH; no shifting needed</td></tr>
+        <tr><td>SIM800L</td><td>RXD</td><td class="gp">GPIO 17</td><td><span class="bus uart">UART2</span></td><td><b>Level-shift.</b> RX is not 3.3 V tolerant</td></tr>
+        <tr><td>SIM800L</td><td>PWRKEY</td><td class="gp">&mdash;</td><td><span class="bus pwr">PWR</span></td><td>Tied to GND internally &mdash; module auto-powers on when VCC is applied</td></tr>
+        <tr><td>SIM800L</td><td>DTR</td><td class="gp">GPIO 19</td><td><span class="bus gpio">GPIO</span></td><td>CSCLK sleep: HIGH = sleep, LOW = wake</td></tr>
+        <tr><td>SIM800L</td><td>EN (MOSFET)</td><td class="gp">GPIO 32</td><td><span class="bus gpio">GPIO</span></td><td>High-side MOSFET gate, full power cut</td></tr>
+        <tr><td>SIM800L</td><td>VCC / GND</td><td class="gp">LiPo / GND</td><td><span class="bus pwr">PWR</span></td><td><b>Direct to LiPo (3.7&ndash;4.2 V). Own supply</b></td></tr>
+        <tr><td>SOS Button</td><td>one leg</td><td class="gp">GPIO 33</td><td><span class="bus gpio">GPIO</span></td><td>Active LOW, internal pull-up, RTC-capable</td></tr>
+        <tr><td>SOS Button</td><td>other leg</td><td class="gp">GND</td><td><span class="bus pwr">PWR</span></td><td>Direct to ground</td></tr>
+        <tr><td>LED</td><td>anode</td><td class="gp">GPIO 13</td><td><span class="bus gpio">GPIO</span></td><td>220 &Omega; series to GND</td></tr>
+        <tr><td>LED</td><td>cathode</td><td class="gp">GND</td><td><span class="bus pwr">PWR</span></td><td>Through 220 &Omega; resistor</td></tr>
+        <tr><td>Piezo</td><td>signal</td><td class="gp">GPIO 12</td><td><span class="bus gpio">GPIO</span></td><td>Passive buzzer, tone() at 2400 Hz</td></tr>
+        <tr><td>Piezo</td><td>GND</td><td class="gp">GND</td><td><span class="bus pwr">PWR</span></td><td></td></tr>
+        <tr><td>Onboard LED</td><td>&mdash;</td><td class="gp">GPIO 2</td><td><span class="bus gpio">GPIO</span></td><td>Debug only &mdash; not the child-facing one</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Level shifting GPIO&nbsp;17</h2></div>
+  <p class="prose">Only one line needs it. The SIM800L's RX input is not 3.3&nbsp;V tolerant, and
+  driving it directly works on the bench for a while and then degrades the pin. A two-resistor
+  divider is enough for a one-way 9600-baud line.</p>
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 620 190" style="min-width:460px" role="img" aria-label="A resistor divider: ESP32 GPIO 17 through a 1 kilohm resistor to the SIM800L RX node, and from that node a 2.2 kilohm resistor to ground, giving about 2.3 volts.">
+        <text x="20" y="70" font-family="var(--mono)" font-size="12" fill="var(--ink)">ESP32</text>
+        <text x="20" y="88" font-family="var(--mono)" font-size="12" font-weight="600" fill="var(--ink)">GPIO 17</text>
+        <line x1="90" y1="80" x2="180" y2="80" stroke="var(--ink-2)" stroke-width="2"/>
+        <rect x="180" y="66" width="74" height="28" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="217" y="85" text-anchor="middle" font-family="var(--mono)" font-size="11.5" fill="var(--ink)">1 k&Omega;</text>
+        <line x1="254" y1="80" x2="390" y2="80" stroke="var(--ink-2)" stroke-width="2"/>
+        <circle cx="330" cy="80" r="4" fill="var(--ink-2)"/>
+        <line x1="330" y1="80" x2="330" y2="118" stroke="var(--ink-2)" stroke-width="2"/>
+        <rect x="296" y="118" width="68" height="28" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="330" y="137" text-anchor="middle" font-family="var(--mono)" font-size="11.5" fill="var(--ink)">2.2 k&Omega;</text>
+        <line x1="330" y1="146" x2="330" y2="166" stroke="var(--ink-2)" stroke-width="2"/>
+        <line x1="312" y1="166" x2="348" y2="166" stroke="var(--ink-2)" stroke-width="2.5"/>
+        <line x1="318" y1="172" x2="342" y2="172" stroke="var(--ink-2)" stroke-width="2"/>
+        <line x1="324" y1="178" x2="336" y2="178" stroke="var(--ink-2)" stroke-width="2"/>
+        <text x="400" y="70" font-family="var(--mono)" font-size="12" fill="var(--ink)">SIM800L</text>
+        <text x="400" y="88" font-family="var(--mono)" font-size="12" font-weight="600" fill="var(--ink)">RXD</text>
+        <text x="400" y="112" font-family="var(--mono)" font-size="10.5" fill="var(--ok)">&asymp; 2.3 V &mdash; safe</text>
+      </svg>
+    </div>
+    <figcaption>3.3 V &times; 2.2/(1+2.2) &asymp; 2.3 V. The other direction needs nothing: the
+    SIM800L's ~2.8 V output already reads as a logic HIGH on the ESP32.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>SOS button</h2></div>
+  <p class="prose">A recessed momentary tactile button between GPIO 33 and GND. The ESP32's internal
+  pull-up holds the line HIGH; pressing the button pulls it LOW. GPIO 33 is RTC-capable, so it
+  can wake the ESP32 from deep sleep via <code>ext0</code>.</p>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 500 200" style="min-width:400px" role="img" aria-label="SOS button wiring. GPIO 33 connects to one leg of a momentary push button. The other leg connects to ground. An internal pull-up resistor inside the ESP32 holds the line high when the button is not pressed.">
+        <text x="20" y="70" font-family="var(--mono)" font-size="12" fill="var(--ink)">ESP32</text>
+        <text x="20" y="88" font-family="var(--mono)" font-size="12" font-weight="600" fill="var(--ink)">GPIO 33</text>
+        <text x="20" y="106" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">INPUT_PULLUP</text>
+
+        <line x1="110" y1="80" x2="200" y2="80" stroke="var(--gpio)" stroke-width="2"/>
+
+        <!-- Button symbol -->
+        <rect x="200" y="60" width="80" height="40" rx="4" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="240" y="85" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="var(--ink)">SOS</text>
+        <circle cx="220" cy="80" r="4" fill="var(--ink-2)"/>
+        <circle cx="260" cy="80" r="4" fill="var(--ink-2)"/>
+        <line x1="220" y1="68" x2="260" y2="68" stroke="var(--ink-2)" stroke-width="2"/>
+
+        <line x1="280" y1="80" x2="360" y2="80" stroke="var(--ink-2)" stroke-width="2"/>
+
+        <!-- Ground -->
+        <line x1="342" y1="80" x2="378" y2="80" stroke="var(--ink-2)" stroke-width="2.5"/>
+        <line x1="348" y1="86" x2="372" y2="86" stroke="var(--ink-2)" stroke-width="2"/>
+        <line x1="354" y1="92" x2="366" y2="92" stroke="var(--ink-2)" stroke-width="1.5"/>
+
+        <text x="390" y="76" font-family="var(--mono)" font-size="11" fill="var(--ink-3)">GND</text>
+
+        <text x="20" y="160" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">Active LOW &mdash; pressed reads 0. 2-second hold to trigger SOS.</text>
+        <text x="20" y="178" font-family="var(--mono)" font-size="10.5" fill="var(--ink-2)">Wakes from deep sleep via ext0 on RTC-capable GPIO 33.</text>
+      </svg>
+    </div>
+    <figcaption><b>Why GPIO 33:</b> Deep-sleep wake requires an RTC-capable GPIO. GPIO 33 is
+    one of the few. The 2-second hold is enforced in firmware to prevent pocket false alarms.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>LED + Piezo</h2></div>
+  <p class="prose">The child-facing feedback. An LED on GPIO 13 and a passive piezo buzzer on
+  GPIO 12. The LED stands in for a vibration motor (out of stock) &mdash; the motor will drop
+  onto the same GPIO later with a MOSFET and flyback diode.</p>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 700 220" style="min-width:540px" role="img" aria-label="LED and piezo wiring. GPIO 13 connects through a 220 ohm resistor to the anode of an LED, whose cathode goes to ground. GPIO 12 connects to one leg of a passive piezo buzzer, whose other leg goes to ground.">
+        <!-- LED -->
+        <text x="20" y="40" font-family="var(--sans)" font-size="13" font-weight="600" fill="var(--ink)">LED (child-facing)</text>
+        <text x="20" y="58" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">GPIO 13 &rarr; 220 &Omega; &rarr; anode &rarr; LED &rarr; cathode &rarr; GND</text>
+
+        <text x="20" y="100" font-family="var(--mono)" font-size="11" fill="var(--ink)">GPIO 13</text>
+        <line x1="100" y1="95" x2="160" y2="95" stroke="var(--gpio)" stroke-width="2"/>
+        <rect x="160" y="81" width="60" height="28" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="190" y="100" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="var(--ink)">220 &Omega;</text>
+        <line x1="220" y1="95" x2="270" y2="95" stroke="var(--gpio)" stroke-width="2"/>
+
+        <!-- LED symbol -->
+        <polygon points="270,81 270,109 310,95" fill="none" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <line x1="310" y1="81" x2="310" y2="109" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <line x1="310" y1="95" x2="360" y2="95" stroke="var(--ink-2)" stroke-width="2"/>
+
+        <!-- Ground -->
+        <line x1="342" y1="95" x2="378" y2="95" stroke="var(--ink-2)" stroke-width="2.5"/>
+        <line x1="348" y1="101" x2="372" y2="101" stroke="var(--ink-2)" stroke-width="2"/>
+        <line x1="354" y1="107" x2="366" y2="107" stroke="var(--ink-2)" stroke-width="1.5"/>
+
+        <text x="390" y="90" font-family="var(--mono)" font-size="10.5" fill="var(--ink-3)">GND</text>
+
+        <!-- Piezo -->
+        <text x="20" y="160" font-family="var(--sans)" font-size="13" font-weight="600" fill="var(--ink)">Piezo Buzzer</text>
+        <text x="20" y="178" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">GPIO 12 &rarr; piezo &rarr; GND. Passive, driven via tone()</text>
+
+        <text x="20" y="210" font-family="var(--mono)" font-size="11" fill="var(--ink)">GPIO 12</text>
+        <line x1="100" y1="205" x2="180" y2="205" stroke="var(--gpio)" stroke-width="2"/>
+
+        <!-- Piezo symbol -->
+        <rect x="180" y="191" width="60" height="28" rx="3" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="210" y="210" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink)">piezo</text>
+        <line x1="240" y1="205" x2="300" y2="205" stroke="var(--ink-2)" stroke-width="2"/>
+
+        <!-- Ground -->
+        <line x1="282" y1="205" x2="318" y2="205" stroke="var(--ink-2)" stroke-width="2.5"/>
+        <line x1="288" y1="211" x2="312" y2="211" stroke="var(--ink-2)" stroke-width="2"/>
+        <line x1="294" y1="217" x2="306" y2="217" stroke="var(--ink-2)" stroke-width="1.5"/>
+
+        <text x="330" y="200" font-family="var(--mono)" font-size="10.5" fill="var(--ink-3)">GND</text>
+
+        <!-- Cue table -->
+        <text x="440" y="40" font-family="var(--sans)" font-size="13" font-weight="600" fill="var(--ink)">LED Patterns</text>
+        <g font-family="var(--mono)" font-size="10.5">
+          <text x="440" y="68" fill="var(--ink-3)">Armed</text><text x="530" y="68" fill="var(--ink-2)">quick flutter, 3&times;</text>
+          <text x="440" y="88" fill="var(--ink-3)">Cancelled</text><text x="530" y="88" fill="var(--ink-2)">one long glow</text>
+          <text x="440" y="108" fill="var(--ink-3)">Sent</text><text x="530" y="108" fill="var(--ink-2)">steady 2 s</text>
+          <text x="440" y="128" fill="var(--ok)" font-weight="600">Acked</text><text x="530" y="128" fill="var(--ok)">calm heartbeat, 20 s</text>
+          <text x="440" y="148" fill="var(--ink-3)">Low battery</text><text x="530" y="148" fill="var(--ink-2)">single tick</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Mount the LED where the child can see it</b> &mdash; a bezel or light pipe on
+    the front face, not buried in the enclosure. If you have a piezo, use it: audible cues reach
+    a child who is not looking at the device.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>NEO-6M power gating</h2></div>
+  <p class="prose">GPIO 27 drives a high-side MOSFET that gates 3.3 V to the NEO-6M's VCC pin.
+  The critical detail: <b>V_BCKP must stay powered regardless</b>. If you cut backup power,
+  every GPS fix becomes a 27-second cold start instead of a ~1-second hot fix &mdash; and the
+  cold start costs more energy than the gating saved.</p>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 700 160" style="min-width:540px" role="img" aria-label="NEO-6M power gating. 3.3V feeds through a MOSFET to the NEO-6M VCC pin. The MOSFET gate connects to GPIO 27. V_BCKP connects directly to 3.3V, bypassing the MOSFET.">
+        <text x="20" y="50" font-family="var(--mono)" font-size="12" fill="var(--pwr)">3V3</text>
+
+        <!-- MOSFET -->
+        <line x1="60" y1="45" x2="140" y2="45" stroke="var(--pwr)" stroke-width="2"/>
+        <rect x="140" y="25" width="80" height="40" rx="3" fill="var(--surface-2)" stroke="var(--ink-2)" stroke-width="1.5"/>
+        <text x="180" y="50" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--ink)">MOSFET</text>
+
+        <!-- Gate -->
+        <line x1="180" y1="65" x2="180" y2="110" stroke="var(--gpio)" stroke-width="1.5"/>
+        <text x="192" y="115" font-family="var(--mono)" font-size="10.5" fill="var(--gpio)">GPIO 27</text>
+
+        <!-- Output to VCC -->
+        <line x1="220" y1="45" x2="380" y2="45" stroke="var(--pwr)" stroke-width="2"/>
+        <text x="260" y="38" font-family="var(--mono)" font-size="10" fill="var(--pwr)">gated 3.3V</text>
+
+        <!-- NEO-6M box -->
+        <rect x="380" y="20" width="140" height="50" rx="3" fill="var(--surface)" stroke="var(--gps)" stroke-width="1.5"/>
+        <text x="450" y="42" text-anchor="middle" font-family="var(--sans)" font-size="12" font-weight="600" fill="var(--ink)">NEO-6M</text>
+        <text x="450" y="60" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--gps)">VCC pin</text>
+
+        <!-- V_BCKP always on -->
+        <line x1="60" y1="110" x2="380" y2="110" stroke="var(--pwr)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="140" y="103" font-family="var(--mono)" font-size="10" fill="var(--pwr)">V_BCKP (always powered)</text>
+
+        <!-- NEO-6M V_BCKP -->
+        <rect x="380" y="85" width="140" height="50" rx="3" fill="var(--surface)" stroke="var(--gps)" stroke-width="1"/>
+        <text x="450" y="107" text-anchor="middle" font-family="var(--sans)" font-size="11" font-weight="500" fill="var(--ink)">NEO-6M</text>
+        <text x="450" y="123" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--gps)">V_BCKP pin</text>
+
+        <!-- Note -->
+        <text x="560" y="40" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">GPIO 27 HIGH = powered</text>
+        <text x="560" y="58" font-family="var(--mono)" font-size="10" fill="var(--ink-3)">GPIO 27 LOW = off</text>
+        <text x="560" y="80" font-family="var(--mono)" font-size="10" fill="var(--warn)">V_BCKP keeps ephemeris</text>
+        <text x="560" y="98" font-family="var(--mono)" font-size="10" fill="var(--warn)">&rarr; hot fix ~1 s vs cold 27 s</text>
+      </svg>
+    </div>
+    <figcaption>Power-gating the NEO-6M saves ~45 mA between fixes. But never cut V_BCKP &mdash;
+    the ephemeris cache is what makes a hot fix fast, and rebuilding it costs more energy than
+    the gating saved.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>Bring-up, one module at a time</h2></div>
+  <p class="prose">Wiring everything then flashing the full firmware means any fault presents as
+  "nothing works". Bring them up in this order &mdash; each step is independently verifiable.</p>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><div class="b"><div class="t">ESP32 alone</div><div class="d">Blink GPIO 2 (onboard), GPIO 13 (LED), and tone GPIO 12 (piezo). Confirms the board, the supply, and your feedback wiring before anything else can confuse the picture.</div></div></div>
+    <div class="step"><div class="n">02</div><div class="b"><div class="t">NEO-6M</div><div class="d">Power from 3V3. Open a serial monitor on GPIO 25/26 at 9600 baud. You should see NMEA sentences within a minute outdoors, five indoors. If all zeros or no data: TX/RX swapped, or module is 5 V dead.</div></div></div>
+    <div class="step"><div class="n">03</div><div class="b"><div class="t">SIM800L on its own supply</div><div class="d">Before any code: power from LiPo, watch the status LED blink, then <code>AT</code> &rarr; <code>OK</code>, <code>AT+CREG?</code> &rarr; <code>0,1</code> or <code>0,5</code>, <code>AT+CSQ</code> &ge; 10. Send one SMS by hand with <code>AT+CMGF=1</code> and <code>AT+CMGS</code>. This breakout ties PWRKEY to GND &mdash; it powers on as soon as VCC is applied.</div></div></div>
+    <div class="step"><div class="n">04</div><div class="b"><div class="t">SOS button</div><div class="d">Upload a sketch that prints <code>digitalRead(33)</code> to serial. Press the button &mdash; should go LOW. If it never reads LOW: wiring fault or wrong GPIO. If it reads LOW without pressing: short circuit.</div></div></div>
+    <div class="step"><div class="n">05</div><div class="b"><div class="t">Full firmware</div><div class="d">Only now. Serial should print <code>tracker up</code> with modem and GPS status. If GPS shows "no fix" indoors, that is normal &mdash; take it outside.</div></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>Symptom &rarr; cause</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Symptom</th><th>Almost always</th></tr></thead>
+      <tbody>
+        <tr><td>ESP32 reboots when SMS is sent</td><td><b>Missing or undersized bulk cap</b> on the SIM800L rail. The single most common fault on these builds</td></tr>
+        <tr><td>SIM800L never answers <code>AT</code></td><td>TX/RX swapped. Try swapping them &mdash; it costs nothing</td></tr>
+        <tr><td>Answers <code>AT</code>, garbled replies</td><td>Baud mismatch, or GPIO 17 driven without the level shifter</td></tr>
+        <tr><td><code>AT+CREG?</code> returns <code>0,2</code> forever</td><td>Searching: no 2G coverage, SIM not registered under RA 11934, or load expired</td></tr>
+        <tr><td>GPS cold start every fix (27 s)</td><td>V_BCKP not powered &mdash; ephemeris lost between power cycles</td></tr>
+        <tr><td>GPS no data at all</td><td>TX/RX swapped, or NEO-6M powered from 5 V (likely dead)</td></tr>
+        <tr><td>SOS button does not wake from deep sleep</td><td>Wrong GPIO &mdash; must be RTC-capable (GPIO 33). Check <code>ext0</code> config</td></tr>
+        <tr><td>LED always on or inverted</td><td>Not applicable for single LED &mdash; check wiring direction if reversed</td></tr>
+        <tr><td>Everything works on USB, fails on battery</td><td>LiPo voltage sag under 2 A TX burst. Use a fresh cell, check connections</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  Matches <code>tracker/include/pins.h</code> at the time of writing &mdash; if you change a pin,
+  change it there first and regenerate this. GPIO 12 sets flash voltage at boot &mdash; it is not
+  safe for arbitrary reuse.
+</footer>
+
+</div>

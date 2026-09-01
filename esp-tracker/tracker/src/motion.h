@@ -35,6 +35,14 @@
 enum class MotionState : uint8_t { Unknown = 0, Stationary, Moving };
 
 namespace motion {
+
+// Raw WiFi scan result — BSSID, RSSI, and SSID for one access point.
+struct ScanAp {
+    uint8_t bssid[6];
+    int8_t  rssi;
+    char    ssid[24];
+};
+
     void begin();
 
     // Call from loop(). Runs the tiers on their own schedules.
@@ -50,4 +58,9 @@ namespace motion {
     // detected. Rural, mostly. The caller should fall back to a fixed cadence
     // rather than trusting a confident-looking "stationary".
     bool blind();
+
+    // Last WiFi scan results — BSSID, RSSI, SSID for each visible AP.
+    // Updated after each Tier 1 scan. Only valid until the next scan.
+    const ScanAp* lastScan();
+    uint8_t lastScanCount();
 }

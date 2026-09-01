@@ -1,7 +1,5 @@
 #pragma once
-// Pin map — ESP32 DevKit v1 + RC522 (SPI) + DS3231/OLED (I2C).
-//
-// RC522 RST was moved off GPIO22 so I2C can have the standard 21/22 pair.
+// Pin map — ESP32 DevKit v1 + RC522 (SPI) + DS1302 RTC (3-wire) + SIM900 (UART2).
 
 // ---- RC522 (SPI) — 3.3V ONLY. 5V destroys the module. --------------------
 #define PIN_RFID_SS    5
@@ -10,7 +8,12 @@
 #define PIN_RFID_MISO  19
 #define PIN_RFID_RST   4
 
-// ---- I2C: DS3231 RTC, optional SSD1306 -----------------------------------
+// ---- DS1302 RTC (3-wire, NOT I2C) ----------------------------------------
+#define PIN_RTC_CLK    14
+#define PIN_RTC_DAT    15
+#define PIN_RTC_CE     2
+
+// ---- I2C: LCD only (PCF8574 backpack) ------------------------------------
 #define PIN_I2C_SDA    21
 #define PIN_I2C_SCL    22
 
@@ -20,8 +23,12 @@
 // Use a buck regulator to ~4 V (or a shield with its own) plus a 1000-2200 uF
 // bulk cap close to the module. Mains powered here, so no battery budget to
 // worry about — but the current spike is identical.
+//
+// PWRKEY is a TOGGLE — each ~1.2 s LOW pulse flips ON↔OFF. GPIO32 floats
+// during ESP32 boot, randomly toggling the module. Fix: set HIGH immediately
+// in begin() to pin the line. See smsq.cpp for the full boot sequence.
 #define PIN_SIM_RX     16   // SIM900 TX -> ESP32 RX
-#define PIN_SIM_TX     17   // ESP32 TX  -> SIM900 RX  *** VIA LEVEL SHIFTER ***
+#define PIN_SIM_TX     17   // ESP32 TX  -> SIM900 RX
 #define PIN_SIM_PWRKEY 32   // hold LOW ~1.2 s to toggle module power
 
 // ---- Feedback -------------------------------------------------------------

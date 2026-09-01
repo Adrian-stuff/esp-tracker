@@ -45,9 +45,18 @@ void service() {
         Fix f{};
         bool have = locator::best(f);
 
-        // TODO: build the event, push to store, POST it (200 == acked).
+        // Build the event with full location data for the store queue.
         QueuedEvent ev{};
         ev.kind = EventKind::Sos;
+        ev.recorded_at = f.recorded_at ? f.recorded_at : millis() / 1000;
+        ev.payload_len = 0;
+        if (have) {
+            ev.payload_len = snprintf(ev.payload, sizeof ev.payload,
+                "{\"lat\":%.6f,\"lon\":%.6f,\"accuracy_m\":%.1f,\"source\":\"%s\"}",
+                f.lat, f.lon, f.accuracy_m,
+                f.source == FixSource::Gnss ? "gnss" :
+                f.source == FixSource::Wifi ? "wifi" : "unknown");
+        }
         store::push(ev);
 
         // Parallel dumb channel: no GPRS, no TLS, no server in the path.

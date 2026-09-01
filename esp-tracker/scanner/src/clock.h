@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 
-// DS3231 + NTP.
+// DS1302 + NTP.
 //
 // The RTC is not a nicety. School Wi-Fi will drop, taps keep being accepted and
 // buffered, and a buffered tap carrying a millis()-derived timestamp SILENTLY

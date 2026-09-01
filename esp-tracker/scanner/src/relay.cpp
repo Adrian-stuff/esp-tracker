@@ -13,7 +13,7 @@ static uint32_t s_lastPoll = 0;
 static bool request(const char* method, const String& url, const String& body, String& out) {
     WiFiClient plain; WiFiClientSecure tls;
     if (API_USE_TLS) tls.setInsecure();          // TODO: pin the CA before production
-    Client& client = API_USE_TLS ? (Client&)tls : (Client&)plain;
+    WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;
     if (!http.begin(client, url)) return false;

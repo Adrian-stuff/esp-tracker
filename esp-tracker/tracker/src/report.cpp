@@ -9,6 +9,13 @@
 #include "mbedtls/sha256.h"
 
 static uint32_t s_lastSent = 0;
+static uint32_t s_lastWifiSent = 0;
+
+// Max APs to include in a WiFi scan SMS (160 char limit).
+// 4 APs with SSID ≈ 148 chars. 5 APs ≈ 185 — too long.
+static constexpr uint8_t WIFI_SCAN_MAX_APS = 4;
+// How often to send WiFi scan data (separate from LOC cadence).
+static constexpr uint32_t WIFI_SCAN_REPORT_MS = 10UL * 60UL * 1000UL;
 
 // Single-letter wire codes for Fix::source (locator.h) — MUST match
 // server/app/tracker_sms.py's SOURCE_CODES exactly, or every report this
@@ -51,7 +58,7 @@ static void hashCode(const char* payload, char out[9]) {
 
 namespace report {
 
-void begin() { s_lastSent = 0; }
+void begin() { s_lastSent = 0; s_lastWifiSent = 0; }
 
 void service() {
     uint32_t interval = (motion::state() == MotionState::Moving)
@@ -84,6 +91,35 @@ void service() {
     // immediately, which is the right tradeoff for a channel this
     // low-stakes and this frequent.
     if (modem::sendSms(SCANNER_SMS_NUMBER, msg)) s_lastSent = now;
+
+    // WiFi scan report — separate cadence from LOC.
+    // Sends raw BSSIDs so the server can match against known places.
+    if (now - s_lastWifiSent >= WIFI_SCAN_REPORT_MS) {
+        uint8_t n = motion::lastScanCount();
+        if (n > 0) {
+            const motion::ScanAp* aps = motion::lastScan();
+            uint8_t toSend = n < WIFI_SCAN_MAX_APS ? n : WIFI_SCAN_MAX_APS;
+
+            // Build payload: <epoch>,<bssid>:<rssi>:<ssid>,...
+            char wpayload[128];
+            int off = snprintf(wpayload, sizeof wpayload, "%lu", (unsigned long)fix.recorded_at);
+            for (uint8_t i = 0; i < toSend && off < (int)sizeof(wpayload) - 30; i++) {
+                char bssid[18];
+                snprintf(bssid, sizeof bssid, "%02X:%02X:%02X:%02X:%02X:%02X",
+                         aps[i].bssid[0], aps[i].bssid[1], aps[i].bssid[2],
+                         aps[i].bssid[3], aps[i].bssid[4], aps[i].bssid[5]);
+                off += snprintf(wpayload + off, sizeof wpayload - off,
+                                ",%s:%d:%s", bssid, aps[i].rssi, aps[i].ssid);
+            }
+
+            char wcode[9];
+            hashCode(wpayload, wcode);
+
+            char wmsg[160];
+            snprintf(wmsg, sizeof wmsg, "WIFISCAN %s,%s", wpayload, wcode);
+            if (modem::sendSms(SCANNER_SMS_NUMBER, wmsg)) s_lastWifiSent = now;
+        }
+    }
 }
 
 }

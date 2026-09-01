@@ -16,9 +16,9 @@ vendor cooperation, no credential emulation.
 | MCU | ESP32 DevKit v1 | Wi-Fi uplink; mains-powered, so no power budget to worry about |
 | SMS | **SIM900** | Second uplink. Texts the parent even when school Wi-Fi is down |
 | Reader | MFRC522 (RC522) | 13.56 MHz. **3.3 V only — 5 V destroys it** |
-| Clock | DS3231 RTC | Non-optional, see §"Why the RTC" |
+| Clock | DS1302 RTC | 3-wire interface (CLK, DAT, CE). Non-optional, see §"Why the RTC" |
 | Feedback | Buzzer + green/red LED | The child must know the tap took |
-| Optional | SSD1306 OLED | Shows the name — turns a beep into a confirmation |
+| Optional | I²C LCD (PCF8574) | Shows the name — turns a beep into a confirmation |
 | Power | 5 V USB supply | Into VIN, not into the RC522 |
 
 ---
@@ -33,10 +33,13 @@ vendor cooperation, no credential emulation.
 | RC522 MISO | 19 | SPI |
 | RC522 RST | 4 | moved off 22 to free I²C |
 | RC522 3.3V | — | **3.3 V, never 5 V** |
-| SIM900 TX / RX | 16 / 17 | UART2. Level-shift the ESP32 TX line |
+| SIM900 TX / RX | 16 / 17 | UART2 |
 | SIM900 PWRKEY | 32 | Hold low ~1.2 s to toggle |
-| DS3231 / OLED SDA | 21 | I²C |
-| DS3231 / OLED SCL | 22 | I²C |
+| DS1302 CLK | 14 | 3-wire |
+| DS1302 DAT | 15 | 3-wire |
+| DS1302 CE | 2 | 3-wire |
+| LCD SDA | 21 | I²C |
+| LCD SCL | 22 | I²C |
 | Buzzer | 25 | via transistor |
 | LED green | 26 | |
 | LED red | 27 | |
@@ -49,8 +52,8 @@ The ESP32 has no battery-backed clock. It gets the time from NTP over Wi-Fi.
 
 School Wi-Fi will drop. When it does, the scanner must keep accepting taps and buffer them —
 and a buffered tap with the wrong timestamp is worse than no tap at all, because it silently
-corrupts the attendance record. The DS3231 keeps time across reboots and outages, so queued
-events carry the moment they actually happened.
+corrupts the attendance record. The DS1302 keeps time across reboots and outages (backed by a
+CR2032 coin cell), so queued events carry the moment they actually happened.
 
 Same principle as the tracker: **`recorded_at` and `received_at` are different fields and both
 get stored.**
@@ -122,6 +125,33 @@ Same rule as the tracker's SIM800L: **up to 2 A in transmit bursts at 3.4–4.4 
 from the ESP32's 3V3 pin or straight off USB 5 V. Use a buck regulator to ~4 V (or a shield with
 its own) plus a 1000–2200 µF bulk cap close to the module. Being mains powered removes the battery
 budget, not the current spike.
+
+### Startup behavior (PWRKEY)
+
+The SIM900 PWRKEY is a **toggle** — each LOW pulse (~1.2 s) flips between ON and OFF. This
+interacts badly with ESP32 reset:
+
+1. **GPIO32 floats during ESP32 boot.** Before `pinMode()` runs, PWRKEY is undefined. If it
+   happens to go LOW, the SIM900 toggles power state randomly across reboots.
+
+2. **The upload reset toggles PWRKEY.** PlatformIO pulls RTS to reset the ESP32, which reconfigures
+   GPIO32. If the SIM900 was ON, this can turn it OFF — or vice versa.
+
+3. **A failed `AT+CMGS` leaves the modem stuck.** If the server or firmware sends `AT+CMGS` and
+   the `>` prompt or Ctrl-Z is never processed (e.g. due to a crash or timeout), every subsequent
+   AT command returns `\r\n> ` instead of `OK`. This is not a power issue — the modem is alive,
+   just waiting for message body.
+
+**The fix** (in `smsq.cpp`):
+
+- `begin()` immediately sets PWRKEY HIGH to pin the line and prevent floating during boot.
+- `begin()` sends ESC (0×1B) twice to cancel any pending CMGS state before sending any AT.
+- `service()` in `Boot` state sends `AT` and waits 3 s. If the modem responds OK, it was already
+  ON — skip the power cycle and go straight to configuration (`ATE0`, `AT+CMGF=1`).
+- If no response after 6 s, **then** it pulses PWRKEY LOW for 1.2 s to power-cycle, and re-probes.
+
+This avoids the old code's problem of unconditionally toggling PWRKEY on every boot, which turned
+OFF a module that was already running from the previous cycle.
 
 ## Direction: in or out?
 
@@ -200,6 +230,32 @@ captive portal, or MAC allowlisting, and none of those are things an ESP32 handl
 Ask the IT contact for a device registration on the IoT/guest VLAN. If that is refused, the
 fallback is the scanner's own uplink — but at that point a BLE anchor by the door (already in
 PLAN.md Phase 02) gives you the same arrival event with no reader and no network at all.
+
+## WiFi configuration
+
+WiFi credentials are **not hardcoded**. The scanner runs a captive portal on first boot
+or when saved credentials fail.
+
+**First boot / reconfigure:**
+1. Power cycle the scanner
+2. Connect your phone to `Tracker-Scanner` (open hotspot)
+3. Open `192.168.4.1` in a browser — captive portal opens automatically
+4. Enter WiFi SSID, password, API base URL, and device token
+5. Save → scanner reboots and connects
+
+**Locked out (WiFi password changed, new location):**
+Same process — power cycle, connect to the hotspot, reconfigure.
+
+**How it works:**
+- ESP32 runs `WIFI_AP_STA` mode: AP is always up on `192.168.4.1`, STA connects in parallel
+- Saved credentials persist in NVS across reboots
+- If STA connection fails, the AP is still accessible for reconfiguration
+- Portal timeout: 3 minutes with no connection → reboot and retry
+
+Configurable via `config.h`:
+- `AP_SSID` — hotspot name (default: `Tracker-Scanner`)
+- `AP_PASS` — hotspot password (default: open)
+- `WIFI_AP_TIMEOUT_S` — portal timeout (default: 180s)
 
 ---
 

@@ -20,6 +20,13 @@ void begin() {
 
 bool sawDuplicate() { return s_dup; }
 
+MFRC522& instance() { return s_rfid; }
+
+void release() {
+    s_rfid.PICC_HaltA();
+    s_rfid.PCD_StopCrypto1();
+}
+
 bool poll(Tap& out) {
     s_dup = false;
     if (!s_rfid.PICC_IsNewCardPresent() || !s_rfid.PICC_ReadCardSerial()) return false;
@@ -27,14 +34,17 @@ bool poll(Tap& out) {
     char uid[24] = {0};
     for (byte i = 0; i < s_rfid.uid.size && i < 10; i++)
         snprintf(uid + i * 2, sizeof(uid) - i * 2, "%02X", s_rfid.uid.uidByte[i]);
-    s_rfid.PICC_HaltA();
-    s_rfid.PCD_StopCrypto1();
+
+    // Leave the card SELECTED (not halted) so card::read() can pull the
+    // offline-fallback data from the same tap session. The caller must call
+    // release() when done with the card.
 
     // A card resting on the reader must not generate hundreds of events — but a
     // legitimate re-tap minutes later must still work.
     uint32_t now = millis();
     if (strcmp(uid, s_lastUid) == 0 && now - s_lastAt < TAP_DEBOUNCE_MS) {
         s_dup = true;
+        release();   // still need to halt duplicate cards
         return false;
     }
     strncpy(s_lastUid, uid, sizeof s_lastUid - 1);

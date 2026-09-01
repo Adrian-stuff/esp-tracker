@@ -25,7 +25,6 @@ void begin() {
     s_lcd.init();
     s_lcd.backlight();
     s_lcd.clear();
-    writeRow(0, "Scanner ready");
     s_ok = true;
 }
 

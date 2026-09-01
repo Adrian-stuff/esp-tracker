@@ -1,6 +1,7 @@
 #include "net.h"
 #include "store.h"
 #include "clock.h"
+#include "settings.h"
 #include "../include/config.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -14,12 +15,22 @@ static uint32_t s_backoff  = 2000;
 static bool     s_portalActive = false;
 static WiFiManager s_wm;
 
-// Custom parameters for the config portal
-static WiFiManagerParameter s_paramApi("api", "API Base URL", API_BASE, 64);
-static WiFiManagerParameter s_paramToken("token", "Device Token", DEVICE_TOKEN, 64);
+// Custom parameters for the config portal. Values are set from settings::*()
+// in begin() — NOT here — because settings::begin() (which loads NVS) runs
+// at setup() time, and these statics would otherwise be constructed before
+// that, from whatever the compiler baked in as a placeholder.
+static WiFiManagerParameter s_paramApi("api", "API Base URL", "", 64);
+static WiFiManagerParameter s_paramToken("token", "Device Token", "", 64);
+static WiFiManagerParameter s_paramSmsPrimary("sms1", "Parent SMS (primary)", "", 20);
+static WiFiManagerParameter s_paramSmsSecondary("sms2", "Parent SMS (secondary, optional)", "", 20);
 
-// Called when credentials are saved via the portal
+// Called when the portal's Save is pressed. WiFiManager persists the WiFi
+// credentials itself; everything else on this page is ours to persist.
 static void saveCallback() {
+    settings::setApiBase(s_paramApi.getValue());
+    settings::setDeviceToken(s_paramToken.getValue());
+    settings::setSmsPrimary(s_paramSmsPrimary.getValue());
+    settings::setSmsSecondary(s_paramSmsSecondary.getValue());
     Serial.println(F("[net] Portal: saved, rebooting..."));
     delay(500);
     ESP.restart();
@@ -31,20 +42,50 @@ void begin() {
     WiFi.mode(WIFI_AP_STA);
     WiFi.setHostname("tracker-scanner");
 
+    // Pre-fill the portal with whatever's currently active, not the
+    // compiled-in defaults — so opening the portal to change one field
+    // doesn't silently reset the others.
+    s_paramApi.setValue(settings::apiBase(), 64);
+    s_paramToken.setValue(settings::deviceToken(), 64);
+    s_paramSmsPrimary.setValue(settings::smsPrimary(), 20);
+    s_paramSmsSecondary.setValue(settings::smsSecondary(), 20);
+
     // Set config portal callback
     s_wm.setSaveConfigCallback(saveCallback);
 
     // Add custom parameters to the portal
     s_wm.addParameter(&s_paramApi);
     s_wm.addParameter(&s_paramToken);
+    s_wm.addParameter(&s_paramSmsPrimary);
+    s_wm.addParameter(&s_paramSmsSecondary);
 
     // Portal settings
     s_wm.setConfigPortalTimeout(WIFI_AP_TIMEOUT_S);
     s_wm.setMinimumSignalQuality(15);
 
-    // Try to connect with saved credentials.
-    // autoConnect() starts the AP if no saved creds or connection fails.
-    // The AP stays up on 192.168.4.1 even after STA connects.
+    // Try default compile-time credentials first, before opening the portal.
+    // This avoids forcing every unit through 192.168.4.1 when the SSID and
+    // password are already known at compile time.
+    if (strlen(WIFI_SSID) > 0) {
+        Serial.printf("[net] Trying default SSID: %s\n", WIFI_SSID);
+        WiFi.begin(WIFI_SSID, WIFI_PASS);
+        uint32_t start = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+            delay(250);
+            Serial.print(".");
+        }
+        Serial.println();
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.printf("[net] Connected to %s, IP=%s\n",
+                          WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+            WiFi.setAutoReconnect(true);
+            return;
+        }
+        Serial.println(F("[net] Default credentials failed, starting portal..."));
+        WiFi.disconnect();
+    }
+
+    // Fall back to config portal.
     Serial.println(F("[net] Starting WiFiManager..."));
     if (!s_wm.autoConnect(AP_SSID, AP_PASS)) {
         Serial.println(F("[net] Portal timed out, rebooting..."));
@@ -100,10 +141,13 @@ size_t drain() {
     if (API_USE_TLS) tls.setInsecure();
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
+    // /functions/v1/ingest, not /api/ingest/taps: Supabase only serves the
+    // former (see supabase/functions/ingest) — the FastAPI dev server aliases
+    // it to the same handler, so this one path works against both backends.
     HTTPClient http;
-    if (!http.begin(client, String(API_BASE) + "/api/ingest/taps")) return 0;
+    if (!http.begin(client, String(settings::apiBase()) + "/functions/v1/ingest")) return 0;
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", String("Bearer ") + DEVICE_TOKEN);
+    http.addHeader("Authorization", String("Bearer ") + settings::deviceToken());
     int code = http.POST(body);
     http.end();
 
@@ -127,9 +171,9 @@ bool postRelaySms(const char* sender, const char* text) {
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;
-    if (!http.begin(client, String(API_BASE) + "/api/relay/sms")) return false;
+    if (!http.begin(client, String(settings::apiBase()) + "/api/relay/sms")) return false;
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", String("Bearer ") + DEVICE_TOKEN);
+    http.addHeader("Authorization", String("Bearer ") + settings::deviceToken());
     int code = http.POST(body);
     http.end();
     return code == 200;

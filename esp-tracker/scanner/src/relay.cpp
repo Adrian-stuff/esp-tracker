@@ -1,6 +1,7 @@
 #include "relay.h"
 #include "smsq.h"
 #include "net.h"
+#include "settings.h"
 #include "../include/config.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -17,7 +18,7 @@ static bool request(const char* method, const String& url, const String& body, S
 
     HTTPClient http;
     if (!http.begin(client, url)) return false;
-    http.addHeader("Authorization", String("Bearer ") + DEVICE_TOKEN);
+    http.addHeader("Authorization", String("Bearer ") + settings::deviceToken());
     http.addHeader("Content-Type", "application/json");
     int code = strcmp(method, "POST") == 0 ? http.POST(body) : http.GET();
     if (code == 200) out = http.getString();
@@ -38,7 +39,7 @@ void service() {
     while (smsq::takeResult(ref, sizeof ref, &sent)) {
         String body = String("{\"sent\":") + (sent ? "true" : "false") + "}";
         String ignored;
-        request("POST", String(API_BASE) + "/functions/v1/outbox/" + ref + "/ack", body, ignored);
+        request("POST", String(settings::apiBase()) + "/functions/v1/outbox/" + ref + "/ack", body, ignored);
     }
 
     uint32_t now = millis();
@@ -50,7 +51,7 @@ void service() {
     if (smsq::depth() >= SMS_QUEUE_DEPTH - 1 || !smsq::ready()) return;
 
     String resp;
-    if (!request("GET", String(API_BASE) + "/functions/v1/outbox?limit=2", "", resp)) return;
+    if (!request("GET", String(settings::apiBase()) + "/functions/v1/outbox?limit=2", "", resp)) return;
 
     JsonDocument doc;
     if (deserializeJson(doc, resp)) return;

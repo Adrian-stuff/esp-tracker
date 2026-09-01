@@ -13,6 +13,7 @@
 #include "relay.h"
 #include "card.h"
 #include "lcd.h"
+#include "settings.h"
 
 // Gate attendance station.
 //
@@ -28,10 +29,24 @@
 
 static uint32_t s_lastDrain = 0;
 static uint32_t s_lastRoster = 0;
+static uint32_t s_lastTapAt = 0;    // millis() of the last tap-result LCD write
+static bool     s_ready = false;    // true after all init completes
+
+// Compact 2-char status symbol for the LCD.
+static const char* statusSymbol() {
+    if (!clockw::ok())          return "!C";
+    if (net::portalActive())    return "AP";
+    if (net::online())          return "ON";
+    if (smsq::ready())          return "SM";
+                                return "OF";
+}
 
 void setup() {
     Serial.begin(115200);
+    settings::begin();  // must run before net::begin(): the config portal's
+                         // fields are pre-filled from here
     lcd::begin();
+    lcd::show("...", "Loading...");
     ui::begin();
     ui::play(Cue::Duplicate);              // one tick: "I am awake"
 
@@ -61,10 +76,8 @@ void setup() {
                   !SIM900_PRESENT ? "not fitted (server will send)"
                                   : (smsq::ready() ? "ready" : "no signal"));
 
-    if (net::online())
-        lcd::show("Online", "Loading...");
-    else
-        lcd::show("Offline", "Loading...");
+    lcd::show(statusSymbol(), "Loading...");
+    s_ready = true;
 }
 
 void loop() {
@@ -79,6 +92,7 @@ void loop() {
     // ------------------------------------------------------------ taps -----
     Tap t;
     if (reader::poll(t)) {
+        s_lastTapAt = now;      // holds the tap-result message on the LCD briefly
         const bool known = roster::known(t.uid) || !roster::size();
 
         if (!clockw::ok()) {
@@ -102,9 +116,9 @@ void loop() {
                 // Try to read card data for LCD display
                 hasCardData = card::read(cardData);
                 if (hasCardData) {
-                    lcd::show(cardData.name, "Tap recorded");
+                    lcd::show(cardData.name, "Scan acknowledged");
                 } else {
-                    lcd::show("Welcome", t.uid);
+                    lcd::show(t.uid, "Scan acknowledged");
                 }
 
                 // Offline fallback: if WiFi is down and we have card data,
@@ -122,11 +136,11 @@ void loop() {
             } else if (SMS_ON_UNKNOWN_CARD) {
                 t.sms_sent = notify::onTap(t, nullptr, "at the gate");
                 ui::play(net::online() ? Cue::Accepted : Cue::Offline);
-                lcd::show("Unknown card", t.uid);
+                lcd::show("Unknown", "Scan acknowledged");
             } else {
                 // Unknown card, not in direct SMS mode
                 ui::play(net::online() ? Cue::Unknown : Cue::Offline);
-                lcd::show("Unknown card", t.uid);
+                lcd::show("Unknown", "Scan acknowledged");
             }
 
             // Release the card after we're done reading
@@ -159,16 +173,26 @@ void loop() {
     // Showing red while SMS still works would misreport the gate as dead.
     ui::setHealth(net::online() || smsq::ready(), store::depth(), clockw::ok());
 
-    // Update LCD with ambient status when not showing a tap
+    // Idle screen: status symbol + queue count on top, time on bottom.
+    // Refreshed once a second so the clock doesn't look frozen — a gate scanner
+    // sits unattended for hours, and "is this thing even on" should be
+    // answerable at a glance.
     static uint32_t s_lastLcd = 0;
-    if (now - s_lastLcd > 5000) {
+    if (s_ready && now - s_lastTapAt > 3000 && now - s_lastLcd >= 1000) {
         s_lastLcd = now;
-        if (net::online() && store::depth() == 0) {
-            lcd::show("Online", "Ready to scan");
-        } else if (!net::online() && store::depth() > 0) {
-            char detail[17];
-            snprintf(detail, sizeof detail, "Queued: %u", (unsigned)store::depth());
-            lcd::show("Offline", detail);
+
+        char line1[17];
+        snprintf(line1, sizeof line1, "%s Q:%u", statusSymbol(), (unsigned)store::depth());
+
+        char line2[17];
+        if (clockw::ok()) {
+            uint32_t local = clockw::now() + (uint32_t)TZ_OFFSET_S;
+            int hh = (local % 86400) / 3600, mm = (local % 3600) / 60, ss = local % 60;
+            snprintf(line2, sizeof line2, "%02d:%02d:%02d", hh, mm, ss);
+        } else {
+            snprintf(line2, sizeof line2, "No clock");
         }
+
+        lcd::show(line1, line2);
     }
 }

@@ -1,6 +1,7 @@
 #include "notify.h"
 #include "smsq.h"
 #include "clock.h"
+#include "settings.h"
 #include "../include/config.h"
 #include <Arduino.h>
 #include <string.h>
@@ -45,8 +46,8 @@ bool onTap(const Tap& t, const char* childName, const char* direction) {
     snprintf(body, sizeof body, "%s tapped %s at %02d:%02d.",
              childName && *childName ? childName : "Your child", direction, hh, mm);
 
-    bool queued = smsq::enqueue(SMS_PARENT_PRIMARY, body);
-    if (SMS_PARENT_SECONDARY[0]) smsq::enqueue(SMS_PARENT_SECONDARY, body);
+    bool queued = smsq::enqueue(settings::smsPrimary(), body);
+    if (settings::smsSecondary()[0]) smsq::enqueue(settings::smsSecondary(), body);
     if (queued) remember(t.uid, now);
     return queued;
 }

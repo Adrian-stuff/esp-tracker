@@ -1,5 +1,6 @@
 #include "roster.h"
 #include "clock.h"
+#include "settings.h"
 #include "../include/config.h"
 #include <Preferences.h>
 #include <WiFiClient.h>
@@ -61,8 +62,8 @@ bool refresh() {
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;
-    if (!http.begin(client, String(API_BASE) + "/functions/v1/roster")) return false;
-    http.addHeader("Authorization", String("Bearer ") + DEVICE_TOKEN);
+    if (!http.begin(client, String(settings::apiBase()) + "/functions/v1/roster")) return false;
+    http.addHeader("Authorization", String("Bearer ") + settings::deviceToken());
     int code = http.GET();
     if (code != 200) { http.end(); return false; }
 

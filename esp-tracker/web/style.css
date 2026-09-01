@@ -156,6 +156,13 @@ main{flex:1; display:flex; min-height:0}
   font:inherit; font-weight:600; padding:11px; cursor:pointer; border:0; border-radius:4px;
   background:var(--accent); color:#fff;
 }
+/* #signin-form button above outranks .linkish alone (ID+element beats one
+   class) — this needs the id itself to read as a secondary action, not a
+   second submit button stacked under the first. */
+#signin-form #signin-toggle{
+  background:none; color:var(--ink-3); font-weight:500; font-size:12px; padding:4px 6px;
+}
+#signin-form #signin-toggle:hover{color:var(--ink)}
 .err{color:var(--sos); font-size:13px; margin:0; min-height:1em}
 .linkish{
   background:none; border:0; color:var(--ink-3); font:inherit; font-size:12px;

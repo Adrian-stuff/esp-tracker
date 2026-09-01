@@ -6,16 +6,22 @@
 // ---------------------------------------------------------------------------
 #define DEVICE_ID     "scanner-gate-01"
 #define DEVICE_SHORT  "g01"                      // prefix for generated event ids
-#define DEVICE_TOKEN  "change-me"                // sha256 of this is in devices.token_hash
+
+// DEFAULT_* below only matter on first boot, or after an NVS erase — see
+// settings.h. Once the config portal has saved a value, that's what runs;
+// these stop being read. Change them here to change what a brand-new,
+// never-configured scanner comes up as, not what this specific unit is doing.
+#define DEFAULT_DEVICE_TOKEN  "K1dNVNW8Lvx9zKWcWST9TKQYO_jpczXV"        // sha256 of this is in devices.token_hash
 
 // Local dev points at the FastAPI server on your LAN; production points at
 // Supabase. The FastAPI server serves the SAME /functions/v1/* paths, so
-// switching backends is these two lines and nothing else.
+// switching backends is one value in the config portal (or DEFAULT_API_BASE
+// below, before first boot) and nothing else.
 //
-//   local:      "http://192.168.1.50:8000"     API_USE_TLS = false
-//   production: "https://xxxx.supabase.co"     API_USE_TLS = true
-#define API_BASE      "http://192.168.1.50:8000"
-static constexpr bool API_USE_TLS = false;
+//   local:      "http://192.168.1.8:8000"       API_USE_TLS = false
+//   production: "https://xxxx.supabase.co"      API_USE_TLS = true
+#define DEFAULT_API_BASE      "https://nvdumsbxspevpvligzlw.supabase.co"
+static constexpr bool API_USE_TLS = true;
 
 // WiFi — configurable via captive portal at 192.168.4.1.
 // These are defaults only; saved credentials in NVS override them.
@@ -25,8 +31,8 @@ static constexpr bool API_USE_TLS = false;
 
 // Fallback if no saved credentials exist (compile-time defaults).
 // For production, set these via the captive portal instead.
-#define WIFI_SSID     ""
-#define WIFI_PASS     ""
+#define WIFI_SSID     "school-wifi"
+#define WIFI_PASS     "schoolpass123"
 
 // ---------------------------------------------------------------------------
 // Reader
@@ -87,8 +93,11 @@ static constexpr bool SIM900_PRESENT  = true;
 
 static constexpr bool SMS_DIRECT_MODE = true;
 
-#define SMS_PARENT_PRIMARY   "+639171234567"
-#define SMS_PARENT_SECONDARY ""              // optional; "" disables
+// Defaults only — see the DEFAULT_* note above. Set the real numbers through
+// the config portal per unit; every "one family, one door" install needs its
+// own, and that must never require a reflash.
+#define DEFAULT_SMS_PARENT_PRIMARY   "+639171234567"
+#define DEFAULT_SMS_PARENT_SECONDARY ""              // optional; "" disables
 
 // A child fidgeting with their card must not become ten texts. The reader
 // debounce is 3 s; this is the separate "do not tell the parent again" window.

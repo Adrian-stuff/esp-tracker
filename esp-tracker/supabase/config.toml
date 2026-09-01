@@ -1,0 +1,42 @@
+# Only the bit that actually matters for this project: which Edge Functions
+# require a Supabase Auth JWT and which don't.
+#
+# ingest, roster and outbox are called by DEVICES with their own per-device
+# bearer token (sha256 in devices.token_hash) — never a Supabase-issued JWT.
+# Deploying one of those with the default verify_jwt=true means the platform
+# rejects every device call at the gateway before the function's own
+# device-token check ever runs. That was a real, shipped bug: both ingest and
+# roster were unreachable by real firmware until redeployed with
+# --no-verify-jwt. This file is what stops it from silently coming back on
+# the next `supabase functions deploy` that forgets the flag.
+#
+# locate and claim are called by the BROWSER with the signed-in parent's own
+# session JWT, and dispatch/sweep-outbox are called by pg_cron with the
+# service_role key — which IS a real JWT — so verify_jwt=true is the correct,
+# free "only a legitimate caller may trigger this" gate for all four. Do not
+# flip those to false; sweep-outbox in particular triggers real paid SMS
+# sends, and an unauthenticated version of it is a public "spend this
+# project's SMS budget" endpoint.
+
+project_id = "nvdumsbxspevpvligzlw"
+
+[functions.ingest]
+verify_jwt = false
+
+[functions.roster]
+verify_jwt = false
+
+[functions.outbox]
+verify_jwt = false
+
+[functions.locate]
+verify_jwt = true
+
+[functions.claim]
+verify_jwt = true
+
+[functions.dispatch]
+verify_jwt = true
+
+[functions.sweep-outbox]
+verify_jwt = true

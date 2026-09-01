@@ -233,8 +233,13 @@ PLAN.md Phase 02) gives you the same arrival event with no reader and no network
 
 ## WiFi configuration
 
-WiFi credentials are **not hardcoded**. The scanner runs a captive portal on first boot
-or when saved credentials fail.
+WiFi uses a **two-stage** approach: compile-time defaults first, captive portal as fallback.
+
+**Boot sequence:**
+1. Scanner tries `WIFI_SSID` / `WIFI_PASS` from `config.h` (up to 8 seconds)
+2. If connected → continues to idle display
+3. If failed → starts captive portal at `192.168.4.1` for 3 minutes
+4. Portal timeout → reboot and retry
 
 **First boot / reconfigure:**
 1. Power cycle the scanner
@@ -253,9 +258,45 @@ Same process — power cycle, connect to the hotspot, reconfigure.
 - Portal timeout: 3 minutes with no connection → reboot and retry
 
 Configurable via `config.h`:
+- `WIFI_SSID` / `WIFI_PASS` — default credentials (tried first)
 - `AP_SSID` — hotspot name (default: `Tracker-Scanner`)
 - `AP_PASS` — hotspot password (default: open)
 - `WIFI_AP_TIMEOUT_S` — portal timeout (default: 180s)
+
+## LCD display
+
+The 16×2 I²C LCD shows status at a glance. Top line = status symbol, bottom = time or message.
+
+**Status symbols (top-left corner):**
+
+| Symbol | Meaning |
+|---|---|
+| `ON` | Online — WiFi connected, full uplink |
+| `SM` | SMS only — SIM900 ready, no WiFi |
+| `OF` | Offline — no uplink, queue only |
+| `!C` | No RTC — clock dead, taps refused |
+| `AP` | Config portal active at 192.168.4.1 |
+
+**Idle display:**
+```
+ON Q:0
+08:30:45
+```
+Top: status symbol + queue depth. Bottom: current time (from DS3231 + NTP).
+
+**On tap:**
+```
+Ana
+Scan acknowledged
+```
+Holds for 3 seconds, then returns to idle.
+
+**Startup:**
+```
+...
+Loading...
+```
+Then transitions to status symbol + time once ready.
 
 ---
 

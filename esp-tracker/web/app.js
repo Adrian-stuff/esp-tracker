@@ -43,9 +43,42 @@ async function boot() {
   setInterval(refresh, 60000);   // realtime carries the news; this is a safety net
 }
 
+let signupMode = false;
+$("signin-toggle").addEventListener("click", () => {
+  signupMode = !signupMode;
+  $("signin-heading").textContent = signupMode ? "Create account" : "Tracker";
+  $("signin-submit").textContent = signupMode ? "Create account" : "Sign in";
+  $("signin-toggle").textContent = signupMode
+    ? "Already have an account? Sign in" : "Need an account? Create one";
+  $("password2").hidden = !signupMode;
+  $("password2").required = signupMode;
+  $("signin-error").textContent = "";
+  $("signin-note").hidden = true;
+});
+
 $("signin-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("signin-error").textContent = "";
+  $("signin-note").hidden = true;
+
+  if (signupMode) {
+    if ($("password").value !== $("password2").value) {
+      $("signin-error").textContent = "Passwords don't match.";
+      return;
+    }
+    const { data, error } = await sb.auth.signUp({
+      email: $("email").value, password: $("password").value,
+    });
+    if (error) { $("signin-error").textContent = error.message; return; }
+    // A fresh account has zero device_access rows, so RLS shows it nothing —
+    // creating an account grants no visibility into anyone's data by itself.
+    // The claim code (below, once signed in) is the only way that changes.
+    if (data.session) { location.reload(); return; }
+    $("signin-note").hidden = false;
+    $("signin-note").textContent = "Check your email to confirm the account, then sign in.";
+    return;
+  }
+
   const { error } = await sb.auth.signInWithPassword({
     email: $("email").value, password: $("password").value,
   });
@@ -54,6 +87,33 @@ $("signin-form").addEventListener("submit", async (e) => {
 });
 $("signout").addEventListener("click", async () => {
   await sb.auth.signOut(); location.reload();
+});
+
+// ------------------------------------------------------------- pairing -----
+// The one write a signed-in user can make outside RLS's normal read/write
+// policies: the claim Edge Function checks the code with the service role
+// and inserts device_access itself. See supabase/functions/claim.
+$("claim-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.submitter;
+  const status = $("claim-status");
+  status.textContent = ""; status.className = "hint";
+  btn.disabled = true;
+
+  const { data: { session } } = await sb.auth.getSession();
+  const r = await fetch(`${window.SUPABASE_URL}/functions/v1/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json",
+               Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ code: $("claim-code").value.trim(), phone: $("claim-phone").value.trim() }),
+  });
+  const body = await r.json().catch(() => ({}));
+  btn.disabled = false;
+
+  if (!r.ok) { status.textContent = body.error || "Couldn't add that device."; status.className = "hint err"; return; }
+  status.textContent = `Added ${body.device.child_name || body.device.name}.`;
+  $("claim-form").reset();
+  refresh();
 });
 
 // ----------------------------------------------------------------- map -----

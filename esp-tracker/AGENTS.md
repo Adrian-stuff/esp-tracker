@@ -47,6 +47,7 @@ esp-tracker/
   - `src/roster.cpp` — server-side card roster cache
   - `src/store.cpp` — offline tap queue (LittleFS)
   - `src/smsq.cpp` — SIM900 SMS queue
+  - `src/lcd.cpp` — LCD display (status symbols, tap feedback)
 - **Dependencies:** MFRC522, RTC, ArduinoJson, LiquidCrystal_I2C, WiFiManager
 - **Critical:** RC522 is 3.3V only — 5V destroys it permanently
 

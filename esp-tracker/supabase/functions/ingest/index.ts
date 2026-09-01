@@ -27,6 +27,10 @@ async function bssidHash(b: string) {
   return (await sha256(b.toLowerCase())).slice(0, 16);
 }
 const ts = (epoch: number) => new Date(epoch * 1000).toISOString();
+const localHHMM = (epoch: number) =>
+  new Date(epoch * 1000).toLocaleTimeString("en-GB", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit" });
+
+const RELAY_FALLBACK_S = 90;  // matches server/app/config.py — then sweep-outbox pays instead
 
 // A place matches when enough of its registered BSSIDs are visible. When it
 // hits, no geolocation API is called at all — cheapest, fastest and most
@@ -72,12 +76,31 @@ Deno.serve(async (req) => {
       // the card's own history for that day, which is the only thing that
       // survives the scanner rebooting and handles taps that were buffered
       // offline and arrived out of order. See migrations/0004_attendance.sql.
-      await db.from("attendance").upsert({
+      const { data: inserted } = await db.from("attendance").upsert({
         event_id: t.id, scanner_id: device.id, card_uid: t.card_uid,
         child_device_id: card?.device_id ?? null,
         recorded_at: ts(t.recorded_at),
-      }, { onConflict: "event_id", ignoreDuplicates: true });
+      }, { onConflict: "event_id", ignoreDuplicates: true }).select("id").maybeSingle();
       accepted.push(t.id);
+
+      // Tell the parent — but only about taps the scanner could not tell them
+      // about itself (device_sms_sent), and only once (a retried tap upsert
+      // that hit the conflict branch returns no row here, matching the
+      // idempotency server/app/main.py's notify_tap relies on).
+      if (inserted && !t.device_sms_sent && card?.device_id) {
+        const { data: att } = await db.from("attendance").select("direction")
+          .eq("event_id", t.id).maybeSingle();
+        const { data: contacts } = await db.from("device_access")
+          .select("phone").eq("device_id", card.device_id).not("phone", "is", null);
+        const text = `${card.child_name} tapped ${att?.direction ?? "in"} at ${localHHMM(t.recorded_at)}.`;
+        const fallback = new Date(Date.now() + RELAY_FALLBACK_S * 1000).toISOString();
+        for (const c of contacts ?? []) {
+          await db.from("outbox").insert({
+            to_number: c.phone, body: text, child_device_id: card.device_id,
+            fallback_after: fallback, ref: t.id,
+          });
+        }
+      }
     }
     await db.from("devices").update({ last_seen_at: new Date().toISOString() }).eq("id", device.id);
     return json({ accepted });

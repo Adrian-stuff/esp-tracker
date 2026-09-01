@@ -24,11 +24,14 @@
 
 <div id="signin" hidden>
   <form id="signin-form">
-    <h2>Tracker</h2>
+    <h2 id="signin-heading">Tracker</h2>
     <input id="email" type="email" placeholder="you@example.com" autocomplete="username" required>
     <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
-    <button type="submit">Sign in</button>
+    <input id="password2" type="password" placeholder="Confirm password" autocomplete="new-password" hidden>
+    <button type="submit" id="signin-submit">Sign in</button>
     <p id="signin-error" class="err"></p>
+    <p id="signin-note" class="hint" hidden></p>
+    <button type="button" id="signin-toggle" class="linkish">Need an account? Create one</button>
   </form>
 </div>
 
@@ -41,6 +44,16 @@
 <main>
   <aside id="sidebar">
     <div id="devices"></div>
+    <section class="panel">
+      <h2>Add a device</h2>
+      <p class="hint">Enter the code you were given when the device was set up.</p>
+      <form id="claim-form" class="place-form">
+        <input id="claim-code" type="text" placeholder="Device code" maxlength="24" autocomplete="off" required>
+        <input id="claim-phone" type="tel" placeholder="Your phone (for SOS texts)" autocomplete="tel">
+        <button type="submit">Add device</button>
+      </form>
+      <p id="claim-status" class="hint"></p>
+    </section>
     <section class="panel">
       <h2>Places</h2>
       <div id="places"></div>

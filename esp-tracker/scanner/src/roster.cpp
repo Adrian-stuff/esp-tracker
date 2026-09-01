@@ -2,6 +2,7 @@
 #include "clock.h"
 #include "settings.h"
 #include "../include/config.h"
+#include "../include/certs.h"
 #include <Preferences.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -58,7 +59,7 @@ uint32_t fetchedAt() { return s_at; }
 bool refresh() {
     WiFiClient      plain;
     WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setInsecure();   // TODO: pin the CA before production
+    if (API_USE_TLS) tls.setCACert(AMAZON_ROOT_CA_1);
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;

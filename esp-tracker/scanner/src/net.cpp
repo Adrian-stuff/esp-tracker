@@ -3,6 +3,7 @@
 #include "clock.h"
 #include "settings.h"
 #include "../include/config.h"
+#include "../include/certs.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -138,7 +139,7 @@ size_t drain() {
 
     WiFiClient      plain;
     WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setInsecure();
+    if (API_USE_TLS) tls.setCACert(AMAZON_ROOT_CA_1);
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     // /functions/v1/ingest, not /api/ingest/taps: Supabase only serves the
@@ -167,7 +168,7 @@ bool postRelaySms(const char* sender, const char* text) {
 
     WiFiClient      plain;
     WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setInsecure();
+    if (API_USE_TLS) tls.setCACert(AMAZON_ROOT_CA_1);
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;

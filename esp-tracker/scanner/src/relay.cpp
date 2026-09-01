@@ -3,6 +3,7 @@
 #include "net.h"
 #include "settings.h"
 #include "../include/config.h"
+#include "../include/certs.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -13,7 +14,7 @@ static uint32_t s_lastPoll = 0;
 
 static bool request(const char* method, const String& url, const String& body, String& out) {
     WiFiClient plain; WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setInsecure();          // TODO: pin the CA before production
+    if (API_USE_TLS) tls.setCACert(AMAZON_ROOT_CA_1);
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;

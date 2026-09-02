@@ -1,6 +1,7 @@
 #include "wifi_setup.h"
 #include "../include/pins.h"
 #include "../include/config.h"
+#include "modem.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -60,6 +61,8 @@ body{
   input{ background:#161d25; color:#e5ebf2; border-color:#2b3641 }
   .info{ background:#0d2137; border-color:#1a4a6e; color:#e5ebf2 }
   .info .code{ background:rgba(255,255,255,.1) }
+  .status-box{ background:#1a2530; border-color:#2b3641; color:#e5ebf2 }
+  .status-box h2,.status-box p{ color:#e5ebf2 }
 }
 .card{
   max-width:420px; margin:0 auto; padding:24px; border-radius:8px;
@@ -70,7 +73,7 @@ h1{ margin:0 0 4px; font-size:20px; color:#141a21 }
 label{ display:block; margin:12px 0 4px; font-size:13px; font-weight:600 }
 input{
   width:100%; padding:10px 12px; border:1px solid #cfd8e2; border-radius:4px;
-  font:inherit; background:#eef1f5;
+  font:inherit; background:#eef1f5; color:#141a21;
 }
 .hint{ font-size:12px; color:#6d7b8b; margin:4px 0 0 }
 .btn{
@@ -84,6 +87,14 @@ input{
   background:#46c3b3; margin-right:6px; vertical-align:middle;
 }
 .status{ font-size:12px; color:#6d7b8b; margin-top:12px; text-align:center }
+.status-box{
+  margin-top:16px; padding:12px 16px; border-radius:6px;
+  background:#f5f5f5; border:1px solid #e0e0e0; color:#141a21;
+}
+.status-box h2{ margin:0 0 8px; font-size:13px; color:#141a21 }
+.status-box p{ margin:4px 0; font-size:13px; color:#141a21 }
+.status-box .ok{ color:#2c6e4e; font-weight:600 }
+.status-box .fail{ color:#b93630; font-weight:600 }
 .info{
   margin-top:20px; padding:16px; border-radius:6px;
   background:#e3f2fd; border:1px solid #90caf9; color:#141a21;
@@ -116,6 +127,12 @@ input{
 
     <button class="btn" type="submit">Save &amp; reboot</button>
   </form>
+
+  <div class="status-box">
+    <h2>SIM800L status</h2>
+    <p><strong>Signal:</strong> __CSQ__</p>
+    <p><strong>Network:</strong> __CREG__</p>
+  </div>
 
   <div class="info">
     <h2>Connect to dashboard</h2>
@@ -190,6 +207,19 @@ static void handleRoot() {
     else if (shortUrl.startsWith("http://")) shortUrl.remove(0, 7);
     page.replace("__DASHBOARD_URL_SHORT__", shortUrl);
 
+    // SIM800L status
+    int8_t csq = modem::signalQuality();
+    int8_t creg = modem::networkStatus();
+    String csqStr = (csq > 0) ? String(csq) + "/31" : "No signal";
+    String cregStr;
+    switch (creg) {
+        case 1: cregStr = "Registered (home)"; break;
+        case 5: cregStr = "Registered (roaming)"; break;
+        default: cregStr = "Not registered"; break;
+    }
+    page.replace("__CSQ__", csqStr);
+    page.replace("__CREG__", cregStr);
+
     server.send(200, "text/html", page);
 }
 
@@ -234,6 +264,9 @@ void wifi_setup::enter() {
 
     // Blue blink pattern: 3 quick flashes = "entering setup mode"
     setupBlink(3);
+
+    // Init modem briefly so SIM800L status is available in the portal
+    modem::begin();
 
     // Start AP — open network, config-only
     WiFi.mode(WIFI_AP_STA);

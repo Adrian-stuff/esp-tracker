@@ -18,8 +18,11 @@ namespace store {
     size_t depth();
 
     // Fill up to `max` taps for one batch POST. Does NOT remove them.
-    size_t peekBatch(Tap* out, size_t max);
+    size_t  peekBatch(Tap* out, size_t max);
 
     // Drop the first `n` taps. Call ONLY after a 200.
-    void   commit(size_t n);
+    void    commit(size_t n);
+
+    // Record tap for today and return 1-based tap count (odd = in, even = out).
+    uint8_t recordTap(const char* uid, uint32_t recorded_at);
 }

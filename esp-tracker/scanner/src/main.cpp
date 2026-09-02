@@ -117,40 +117,54 @@ void loop() {
             if (!store::push(t)) {
                 ui::play(Cue::Error);      // flash full
                 lcd::show("ERROR", "Queue full");
-            } else if (known && !SMS_ON_UNKNOWN_CARD) {
-                t.sms_sent = notify::onTap(t, nullptr, "at the gate");
-                ui::play(net::online() ? Cue::Accepted : Cue::Offline);
-
-                // Try to read card data for LCD display
-                hasCardData = card::read(cardData);
-                if (hasCardData) {
-                    lcd::show(cardData.name, "Scan acknowledged");
-                } else {
-                    lcd::show(t.uid, "Scan acknowledged");
-                }
-
-                // Offline fallback: if WiFi is down and we have card data,
-                // send a direct SMS using the phone number from the card.
-                if (!net::online() && hasCardData && SIM900_PRESENT && smsq::ready()) {
-                    uint32_t local = t.recorded_at + (uint32_t)(TZ_OFFSET_S);
-                    int hh = (local % 86400) / 3600;
-                    int mm = (local % 3600) / 60;
-                    char body[152];
-                    snprintf(body, sizeof body, "%s tapped in at %02d:%02d.",
-                             cardData.name, hh, mm);
-                    smsq::enqueue(cardData.phone, body);
-                    t.sms_sent = true;
-                }
-            } else if (SMS_ON_UNKNOWN_CARD) {
-                t.sms_sent = notify::onTap(t, nullptr, "at the gate");
-                ui::play(net::online() ? Cue::Accepted : Cue::Offline);
-                lcd::show("Unknown", "Scan acknowledged");
             } else {
-                // Unknown card, not in direct SMS mode
-                ui::play(net::online() ? Cue::Unknown : Cue::Offline);
-                lcd::show("Unknown", "Scan acknowledged");
-            }
+                uint8_t tapNum = store::recordTap(t.uid, t.recorded_at);
+                const bool isTimeIn = (tapNum % 2 == 1);
+                const char* dirStr = isTimeIn ? "in" : "out";
+                const char* dirLabel = isTimeIn ? "TIME IN" : "TIME OUT";
 
+                // Format Line 2: "TIME IN   7:52AM" or "TIME OUT  4:30PM"
+                uint32_t local = t.recorded_at + (uint32_t)(TZ_OFFSET_S);
+                struct tm tm_info;
+                gmtime_r((time_t*)&local, &tm_info);
+                int h12 = tm_info.tm_hour % 12;
+                if (h12 == 0) h12 = 12;
+                const char* ampm = tm_info.tm_hour < 12 ? "AM" : "PM";
+                char line2[17];
+                snprintf(line2, sizeof line2, "%-8s %2d:%02d%s",
+                         dirLabel, h12, tm_info.tm_min, ampm);
+
+                if (known && !SMS_ON_UNKNOWN_CARD) {
+                    // Try to read card data for LCD display
+                    hasCardData = card::read(cardData);
+                    t.sms_sent = notify::onTap(t, hasCardData ? cardData.name : nullptr, dirStr);
+                    ui::play(net::online() ? Cue::Accepted : Cue::Offline);
+
+                    if (hasCardData) {
+                        lcd::show(cardData.name, line2);
+                    } else {
+                        lcd::show(t.uid, line2);
+                    }
+
+                    // Offline fallback: if WiFi is down and we have card data,
+                    // send a direct SMS using the phone number from the card.
+                    if (!net::online() && hasCardData && SIM900_PRESENT && smsq::ready()) {
+                        char body[152];
+                        snprintf(body, sizeof body, "%s tapped %s at %02d:%02d.",
+                                 cardData.name, dirStr, tm_info.tm_hour, tm_info.tm_min);
+                        smsq::enqueue(cardData.phone, body);
+                        t.sms_sent = true;
+                    }
+                } else if (SMS_ON_UNKNOWN_CARD) {
+                    t.sms_sent = notify::onTap(t, nullptr, dirStr);
+                    ui::play(net::online() ? Cue::Accepted : Cue::Offline);
+                    lcd::show("Unknown", line2);
+                } else {
+                    // Unknown card, not in direct SMS mode
+                    ui::play(net::online() ? Cue::Unknown : Cue::Offline);
+                    lcd::show("Unknown", line2);
+                }
+            }
             // Release the card after we're done reading
             reader::release();
         }

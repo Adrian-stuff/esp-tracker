@@ -9,6 +9,10 @@ static const char* LOG_PATH    = "/taps.log";
 static const char* CURSOR_PATH = "/taps.cur";
 
 struct Rec { char uid[24]; uint32_t recorded_at; char id[24]; uint8_t sms_sent; };
+struct DailyTap { char uid[24]; uint8_t count; };
+static DailyTap s_daily[ROSTER_MAX_CARDS];
+static size_t   s_dailyCount = 0;
+static uint32_t s_currentDay = 0;
 
 static uint32_t s_cursor = 0;      // records already delivered
 
@@ -52,7 +56,40 @@ bool begin() {
             writeCursor(0);
         }
     }
+
+    // Pre-populate today's tap counts from stored log (reboot recovery)
+    File log = LittleFS.open(LOG_PATH, "r");
+    if (log) {
+        Rec r;
+        while (log.read((uint8_t*)&r, sizeof r) == sizeof r) {
+            recordTap(r.uid, r.recorded_at);
+        }
+        log.close();
+    }
     return true;
+}
+
+uint8_t recordTap(const char* uid, uint32_t recorded_at) {
+    if (!uid || !*uid || !recorded_at) return 1;
+    uint32_t day = (recorded_at + (uint32_t)TZ_OFFSET_S) / 86400;
+    if (day != s_currentDay) {
+        s_currentDay = day;
+        s_dailyCount = 0;
+    }
+    for (size_t i = 0; i < s_dailyCount; i++) {
+        if (strcmp(s_daily[i].uid, uid) == 0) {
+            s_daily[i].count++;
+            return s_daily[i].count;
+        }
+    }
+    if (s_dailyCount < ROSTER_MAX_CARDS) {
+        strncpy(s_daily[s_dailyCount].uid, uid, sizeof(s_daily[s_dailyCount].uid) - 1);
+        s_daily[s_dailyCount].uid[sizeof(s_daily[s_dailyCount].uid) - 1] = 0;
+        s_daily[s_dailyCount].count = 1;
+        s_dailyCount++;
+        return 1;
+    }
+    return 1;
 }
 
 bool push(const Tap& t) {

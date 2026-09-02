@@ -54,10 +54,44 @@ static NimBLECharacteristic* s_bleTx = nullptr;
 static NimBLECharacteristic* s_bleRx = nullptr;
 static bool           s_bleConnected = false;
 
+// Small ring buffer so messages are not lost
+static constexpr size_t BLE_BUF_SIZE = 512;
+static char s_bleBuf[BLE_BUF_SIZE];
+static size_t s_bleBufHead = 0;
+static size_t s_bleBufLen  = 0;
+
+static void bleBufAppend(const char* data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        s_bleBuf[(s_bleBufHead + s_bleBufLen) % BLE_BUF_SIZE] = data[i];
+        if (s_bleBufLen < BLE_BUF_SIZE) s_bleBufLen++;
+        else s_bleBufHead = (s_bleBufHead + 1) % BLE_BUF_SIZE;
+    }
+}
+
+static void bleFlush() {
+    if (!s_bleConnected || !s_bleTx || s_bleBufLen == 0) return;
+    while (s_bleBufLen > 0) {
+        size_t chunk = s_bleBufLen > 20 ? 20 : s_bleBufLen;
+        char tmp[21];
+        for (size_t i = 0; i < chunk; i++) {
+            tmp[i] = s_bleBuf[(s_bleBufHead + i) % BLE_BUF_SIZE];
+        }
+        tmp[chunk] = '\0';
+        s_bleTx->setValue((uint8_t*)tmp, chunk);
+        s_bleTx->notify();
+        s_bleBufHead = (s_bleBufHead + chunk) % BLE_BUF_SIZE;
+        s_bleBufLen -= chunk;
+        delay(20);
+    }
+}
+
 class BleServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* p) override {
         s_bleConnected = true;
         Serial.println("[BLE] client connected");
+        // Flush any queued messages after a short delay for subscription setup
+        delay(500);
+        bleFlush();
     }
     void onDisconnect(NimBLEServer* p) override {
         s_bleConnected = false;
@@ -97,10 +131,8 @@ static void processBleCommand(const char* cmd) {
             s_sosNumber, s_scannerNumber, csq, creg);
     } else if (strcmp(cmd, "WIFI") == 0) {
         snprintf(buf, sizeof buf, "Entering WiFi config mode...\n");
-        if (s_bleConnected && s_bleTx) {
-            s_bleTx->setValue((uint8_t*)buf, strlen(buf));
-            s_bleTx->notify();
-        }
+        bleBufAppend(buf, strlen(buf));
+        bleFlush();
         Serial.print(buf);
         delay(200);
         wifi_setup::enter();  // blocks, then reboots
@@ -116,11 +148,9 @@ static void processBleCommand(const char* cmd) {
         snprintf(buf, sizeof buf, "Unknown cmd. Type HELP\n");
     }
 
-    // Send response over BLE
-    if (s_bleConnected && s_bleTx) {
-        s_bleTx->setValue((uint8_t*)buf, strlen(buf));
-        s_bleTx->notify();
-    }
+    // Send response over BLE (queued, sent when subscribed)
+    bleBufAppend(buf, strlen(buf));
+    bleFlush();
     Serial.print(buf);
 }
 
@@ -177,10 +207,8 @@ static void dbg(const char* fmt, ...) {
     vsnprintf(buf, sizeof buf, fmt, args);
     va_end(args);
     Serial.print(buf);
-    if (s_bleConnected && s_bleTx) {
-        s_bleTx->setValue((uint8_t*)buf, strlen(buf));
-        s_bleTx->notify();
-    }
+    bleBufAppend(buf, strlen(buf));
+    bleFlush();
 }
 
 // Tracker — ESP32 + SIM800L + NEO-6M + button.

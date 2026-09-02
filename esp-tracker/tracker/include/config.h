@@ -101,7 +101,7 @@ static constexpr uint32_t FIX_BUDGET_GNSS_MS  = 30000;  // never completes indoo
 #define DEVICE_ID      "tracker-01"
 #define DEVICE_TOKEN   "myzjFRtVrfcmJ0ecEooZAYVTAWUzsaPTI9-smDrcdCk"  // bearer token for Supabase ingest
 #define CLAIM_CODE     "TRACK-DEMO-2026"  // parent enters this on dashboard to pair
-#define DASHBOARD_URL  "https://esp-tracker.vercel.app"  // parent dashboard
+#define DASHBOARD_URL  "https://web-ten-beta-17.vercel.app"  // parent dashboard
 
 // HTTP, not MQTT. Once GPRS became bursty (below), a persistent broker session
 // bought nothing: no broker to run, no separate ingest worker, and the HTTP 200

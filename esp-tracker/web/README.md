@@ -9,6 +9,41 @@ cd web && vercel --prod
 
 Set your project URL and anon key in `config.js` first.
 
+## Git-based deploys — Root Directory MUST be `esp-tracker/web`
+
+This directory's actual position in the connected Git repository is **not** the repo root. Verify with:
+
+```bash
+git rev-parse --show-toplevel   # -> .../possible-client  (NOT .../esp-tracker)
+```
+
+The repo (`github.com/Adrian-stuff/esp-tracker`) is cloned into a `possible-client` parent
+directory whose only content is a top-level `esp-tracker/` folder — so relative to the Git repo
+root, this dashboard lives at `esp-tracker/web`, not `web`.
+
+**Action needed in the Vercel dashboard** (not fixable from `vercel.json` — Root Directory is a
+project setting, not a file-based config key): Project → Settings → General → **Root Directory**
+must be set to `esp-tracker/web`. `vercel project inspect web` was seen reporting `.` — if that is
+still the case, a GitHub-triggered build looks for files at the true repo root and will not find
+this dashboard.
+
+This does NOT affect manual CLI deploys (`vercel deploy --prod` run from inside `web/`) — those
+package whatever directory you run the command from, ignoring the Root Directory project setting
+entirely. That is why CLI deploys have worked throughout this project even if the Git-triggered
+path is misconfigured.
+
+**Also check Deployment Protection.** A GitHub push once produced a Production deployment that
+redirected every request to `vercel.com/sso-api` (Vercel's own login wall) instead of serving this
+site — confirmed via the `Location` response header, not guessed. That happened on a
+git-integration deployment, not a CLI one. If it recurs, re-point the alias to the last good CLI
+deployment (`vercel alias set <good-deployment-url> <alias-domain>`) as an immediate fix, then
+check Project → Settings → **Deployment Protection** and make sure "Vercel Authentication" is not
+applied to the Production environment.
+
+`vercel.json` now pins `"framework": null` and `"buildCommand": null` explicitly, so a Git-triggered
+build cannot guess a framework or run an unwanted install/build step — it always serves these files
+as-is, matching exactly what a CLI deploy already does.
+
 ## Pages
 
 - **`index.html`** — landing page. Just asks which dashboard you want; no auth, no queries.

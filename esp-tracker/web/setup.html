@@ -131,7 +131,9 @@
     </div>
     <div class="config-card">
       <h4>Dashboard</h4>
-      <p>Web app for parents. Shows live map, attendance, SOS alerts. Pairs to a tracker via claim code.</p>
+      <p>Three pages, not one: <code>index.html</code> is a landing chooser, <code>tracker.html</code>
+      is the parent view (map, battery, SOS, places), <code>attendance.html</code> is the school-gate
+      view (taps, daily in/out, scanner status). Pairs to a tracker via claim code.</p>
     </div>
   </div>
 
@@ -164,7 +166,9 @@
       <span class="flow-box cloud">locations table</span>
     </div>
   </div>
-  <p>Two SMS messages go out: <code>LOC</code> (GPS coordinates) and <code>WIFISCAN</code> (nearby WiFi networks). The WiFi scan is what enables indoor positioning &mdash; the server matches BSSIDs against named places.</p>
+  <p>Two SMS messages go out: <code>LOC</code> (GPS coordinates, plus battery percentage riding
+  along in the same message) and <code>WIFISCAN</code> (nearby WiFi networks). The WiFi scan is
+  what enables indoor positioning &mdash; the server matches BSSIDs against named places.</p>
 
   <h3>SOS button</h3>
   <div class="flow">
@@ -177,8 +181,21 @@
       <span class="flow-arrow">&rarr;</span>
       <span class="flow-box cloud">Dashboard SOS banner</span>
     </div>
+    <div class="flow-step">
+      <span class="flow-box cloud">relay-sms confirms storage</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box sms">ACK SMS via scanner</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box device">Tracker: green LED, stops retrying</span>
+    </div>
   </div>
-  <p>The SOS goes to both the parent (direct) and the scanner (relayed to Supabase). The dashboard shows a pulsing red banner. The parent acknowledges to stop the escalation ladder (secondary SMS, then voice calls).</p>
+  <p>The SOS goes to both the parent (direct, human-readable text — untouched by any of this) and
+  the scanner (relayed to Supabase, carrying an extra machine-readable id the parent never sees).
+  The dashboard shows a pulsing red banner. The parent acknowledges there to stop the escalation
+  ladder (secondary SMS, then voice calls) &mdash; a completely separate thing from the tracker's
+  own LED. The tracker keeps retrying its own delivery (exponential backoff, "never gives up")
+  until it gets a REAL ack back through the second flow above, not just because a send appeared to
+  go through locally. See section 9 for what each LED color/pattern means during this.</p>
 
   <h3>Locate now</h3>
   <div class="flow">
@@ -312,6 +329,13 @@ WIFI   (enters config mode remotely)</pre>
     <tr><th>Command</th><th>Effect</th></tr>
     <tr><td><code>&lt;secret&gt; SOS +639...</code></td><td>Set SOS phone number</td></tr>
     <tr><td><code>&lt;secret&gt; SCANNER +639...</code></td><td>Set scanner relay number</td></tr>
+    <tr>
+      <td><code>&lt;secret&gt; ACK &lt;id&gt;</code></td>
+      <td>Not something a person types. Sent automatically by <code>relay-sms</code>, relayed
+      through the scanner's existing outbox mechanism, once an SOS this tracker sent has actually
+      reached the server. Clears the local retry queue for that SOS and plays the green
+      "Acked" LED cue — see section 9.</td>
+    </tr>
   </table>
 
   <h3>BLE commands</h3>
@@ -320,10 +344,30 @@ WIFI   (enters config mode remotely)</pre>
     <tr><th>Command</th><th>Effect</th></tr>
     <tr><td><code>SOS +639...</code></td><td>Set SOS number</td></tr>
     <tr><td><code>SCANNER +639...</code></td><td>Set scanner number</td></tr>
+    <tr>
+      <td><code>SEND +639... &lt;message&gt;</code></td>
+      <td>Sends that exact message right now via the SIM800L and replies with the real result
+      (<code>Sent OK</code> / <code>Send FAILED</code>). Useful for testing the modem end-to-end
+      (signal, credit, wiring) without waiting for a scheduled report or triggering a real SOS.</td>
+    </tr>
     <tr><td><code>WIFI</code></td><td>Enter WiFi config mode (captive portal)</td></tr>
-    <tr><td><code>STATUS</code></td><td>Show config + signal info</td></tr>
+    <tr><td><code>STATUS</code></td><td>Show config, signal, and battery info</td></tr>
     <tr><td><code>HELP</code></td><td>List commands</td></tr>
   </table>
+  <h3>Serial logging</h3>
+  <p>Everything the tracker does — every SMS send attempt and result, every SOS decision, every
+  queue push/ack/retry, every notification fired or suppressed — is printed to the USB serial
+  console at 115200 baud with a <code>[tag]</code> prefix (<code>[sos]</code>, <code>[modem]</code>,
+  <code>[report]</code>, <code>[store]</code>, <code>[notify]</code>, <code>[battery]</code>,
+  <code>[boot]</code>).</p>
+  <p>The modem layer also detects a SIM800L going unresponsive — 3 consecutive AT command timeouts
+  in a row prints:</p>
+  <pre>[modem] *** SIM800L BLACKOUT SUSPECTED *** 3 consecutive AT timeouts — module not
+responding. Check LiPo connection and the bulk cap at the module (brownout during
+a TX burst is the classic cause; see AGENTS.md).</pre>
+  <p>and logs recovery the moment an AT command succeeds again. A brownout mid-TX-burst (the
+  SIM800L can pull up to 2A) is the most common real-world cause — see the power warning in
+  <code>AGENTS.md</code> and <code>tracker/README.md</code>.</p>
 
   <!-- ================================================================ -->
   <h2>8. Troubleshooting</h2>
@@ -343,7 +387,79 @@ WIFI   (enters config mode remotely)</pre>
   </table>
 
   <!-- ================================================================ -->
-  <h2>9. Security</h2>
+  <h2>9. LED status — what each color means</h2>
+
+  <p>The tracker has one RGB LED (common anode). Colors and blink patterns come straight from
+  <code>tracker/src/feedback.cpp</code> — this table is not a guess, it lists exactly what the
+  firmware drives.</p>
+
+  <h3>Boot self-test</h3>
+  <p>On every power-up, before anything else: <strong>red 1s &rarr; green 1s &rarr; blue 1s &rarr;
+  off</strong>. This just proves all three LED legs are wired correctly — it is not a status
+  signal.</p>
+
+  <h3>SOS cues (during and after a button press)</h3>
+  <table>
+    <tr><th>Color</th><th>Pattern</th><th>Meaning</th></tr>
+    <tr>
+      <td><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff6400;margin-right:6px;vertical-align:middle"></span>Orange</td>
+      <td>Quick flutter (3 short flashes)</td>
+      <td><strong>Armed</strong> — the 2-second hold registered. Hold again within 5 seconds to cancel.</td>
+    </tr>
+    <tr>
+      <td><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff0000;margin-right:6px;vertical-align:middle"></span>Red</td>
+      <td>One long flash (700ms)</td>
+      <td><strong>Cancelled</strong> — the second hold inside the cancel window aborted the SOS.</td>
+    </tr>
+    <tr>
+      <td><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff0032;margin-right:6px;vertical-align:middle"></span>Red with a faint blue tint</td>
+      <td>Steady glow (2s)</td>
+      <td><strong>Sent</strong> — the tracker finished trying to send the SOS (to the parent directly
+      and to the scanner/server) at the 5-second deadline. This does NOT mean it was
+      confirmed delivered — see "Acked" below for that.</td>
+    </tr>
+    <tr>
+      <td><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#00ff00;margin-right:6px;vertical-align:middle"></span>Green</td>
+      <td>Calm heartbeat, repeats for ~20s</td>
+      <td><strong>Acked</strong> — the server confirmed this SOS actually arrived (a real ack SMS
+      came back via the scanner, not just "the local modem accepted it"). This is the only cue
+      that means &ldquo;your parent has been told&rdquo; for certain.</td>
+    </tr>
+  </table>
+
+  <h3>Ambient cue</h3>
+  <table>
+    <tr><th>Color</th><th>Pattern</th><th>Meaning</th></tr>
+    <tr>
+      <td><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff0000;margin-right:6px;vertical-align:middle"></span>Red</td>
+      <td>Single short tick, every 30 min while low</td>
+      <td><strong>Low battery</strong> (&le;20%, or &le;10% critical). Deliberately the LOWEST
+      priority cue — an SOS cue in progress always wins and is never interrupted by a battery
+      tick, even if the tick happens to fire mid-SOS.</td>
+    </tr>
+  </table>
+
+  <h3>WiFi config portal (separate from the cues above)</h3>
+  <table>
+    <tr><th>Color</th><th>Pattern</th><th>Meaning</th></tr>
+    <tr>
+      <td>Blue</td><td>3 quick blinks at entry</td>
+      <td>Confirms the SOS-button-held-at-boot gesture was recognized — captive portal starting.</td>
+    </tr>
+    <tr>
+      <td>Blue</td><td>Slow pulse (dim, ~1s on/off) while active</td>
+      <td>Config portal is live at <code>192.168.4.1</code> — times out and reboots after 5 minutes.</td>
+    </tr>
+  </table>
+
+  <div class="tip"><strong>Why battery is red, same as Cancelled:</strong> there are only 3 LED
+  legs and 5 SOS-adjacent cues to distinguish, so two ambient/rare cues intentionally share a
+  color where the PATTERN (not the color) tells them apart — a single short tick reads
+  differently from one long 700ms flash once you've seen both. Priority ordering (battery can
+  never interrupt an active SOS cue) matters more here than giving every cue a unique color.</div>
+
+  <!-- ================================================================ -->
+  <h2>10. Security</h2>
   <ul>
     <li><strong>SMS_CMD_SECRET</strong> prevents unauthorized reconfiguration of the tracker</li>
     <li><strong>ROSTER_SALT</strong> hashes card UIDs so the roster can't be enumerated</li>

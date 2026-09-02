@@ -168,6 +168,7 @@ async def ingest_taps(batch: TapBatch, device=Depends(auth.current_device)):
 
 
 @app.post("/api/relay/sms")
+@app.post("/functions/v1/relay-sms")
 async def relay_sms(body: RelayedSms, device=Depends(auth.current_device)):
     """A scanner forwarding one SMS its own modem received — see
     scanner-uno/sms_scanner/src/modem.h's pollSms() and

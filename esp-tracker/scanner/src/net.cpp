@@ -196,7 +196,7 @@ bool postRelaySms(const char* sender, const char* text) {
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;
-    if (!http.begin(client, String(settings::apiBase()) + "/api/relay/sms")) return false;
+    if (!http.begin(client, String(settings::apiBase()) + "/functions/v1/relay-sms")) return false;
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", String("Bearer ") + settings::deviceToken());
     int code = http.POST(body);

@@ -343,6 +343,15 @@ static constexpr uint32_t BATTERY_CHECK_INTERVAL_MS = 30UL * 60UL * 1000UL;
 void loop() {
     uint32_t now = millis();
 
+    // Software watchdog — reset if main loop stalls for 60 seconds
+    static uint32_t s_lastLoopRun = 0;
+    if (s_lastLoopRun != 0 && (now - s_lastLoopRun) > 60000) {
+        Serial.println("[WATCHDOG] loop stalled, resetting");
+        delay(100);
+        ESP.restart();
+    }
+    s_lastLoopRun = now;
+
     // TEST MODE: send diagnostic SMS every 5 seconds
     if (TEST_MODE) {
         if (now - s_lastTestSms >= TEST_SMS_INTERVAL_MS) {

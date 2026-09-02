@@ -13,6 +13,7 @@ namespace sos {
 static bool     s_active      = false;
 static uint32_t s_triggered   = 0;
 static bool     s_sent        = false;
+static uint8_t  s_smsStep     = 0;  // 0= idle, 1= sending parent, 2= sending scanner, 3= done
 
 void begin() {
     pinMode(PIN_SOS_BUTTON, INPUT_PULLUP);
@@ -25,14 +26,65 @@ void trigger() {
     s_active    = true;
     s_triggered = millis();
     s_sent      = false;
+    s_smsStep   = 0;
 
     // 1. Confirm to the child IMMEDIATELY, before anything else.
-    //    Non-blocking: this sits on the path racing a 5-second deadline, so it
-    //    must not spend 300 ms in delay() the way the motor version did.
     feedback::play(Cue::Armed);
 
     // 2. Race all four position sources.
     locator::beginAcquire();
+}
+
+// Non-blocking SMS state machine — called every loop iteration.
+// Sends one SMS per call, returns true while still working.
+static bool serviceSms() {
+    if (s_smsStep == 0) return false;  // nothing to send
+
+    if (s_smsStep == 1) {
+        // First attempt: send to parent
+        Fix f{};
+        bool have = locator::best(f);
+
+        char sms[160];
+        if (have) {
+            snprintf(sms, sizeof sms,
+                     "SOS from %s. https://maps.google.com/?q=%.5f,%.5f (+/-%dm)",
+                     DEVICE_ID, f.lat, f.lon, (int)f.accuracy_m);
+        } else {
+            snprintf(sms, sizeof sms, "SOS from %s. Position unknown, last known follows.", DEVICE_ID);
+        }
+
+        // Try to send — if modem is busy, skip and move on
+        if (modem::sendSms(s_sosNumber, sms)) {
+            s_smsStep = 2;  // success, try scanner next
+        } else {
+            s_smsStep = 2;  // failed, try scanner anyway
+        }
+        return true;
+    }
+
+    if (s_smsStep == 2) {
+        // Second attempt: relay via scanner
+        if (strlen(s_scannerNumber) > 0 && strcmp(s_scannerNumber, s_sosNumber) != 0) {
+            Fix f{};
+            bool have = locator::best(f);
+            char sms[160];
+            if (have) {
+                snprintf(sms, sizeof sms,
+                         "SOS from %s. https://maps.google.com/?q=%.5f,%.5f (+/-%dm)",
+                         DEVICE_ID, f.lat, f.lon, (int)f.accuracy_m);
+            } else {
+                snprintf(sms, sizeof sms, "SOS from %s. Position unknown, last known follows.", DEVICE_ID);
+            }
+            modem::sendSms(s_scannerNumber, sms);
+        }
+        s_smsStep = 3;  // done
+        s_sent = true;
+        feedback::play(Cue::Sent);
+        return false;
+    }
+
+    return false;
 }
 
 void service() {
@@ -40,12 +92,18 @@ void service() {
     if (!s_active) return;
     locator::service();
 
+    // Non-blocking SMS sending
+    if (s_smsStep > 0) {
+        serviceSms();
+        return;  // don't check timeouts while sending
+    }
+
     // THE FIVE-SECOND RULE. Do not wait for GNSS: indoors it never returns.
     if (!s_sent && millis() - s_triggered >= SOS_TX_DEADLINE_MS) {
+        // Build the event with full location data for the store queue.
         Fix f{};
         bool have = locator::best(f);
 
-        // Build the event with full location data for the store queue.
         QueuedEvent ev{};
         ev.kind = EventKind::Sos;
         ev.recorded_at = f.recorded_at ? f.recorded_at : millis() / 1000;
@@ -59,27 +117,14 @@ void service() {
         }
         store::push(ev);
 
-        // Parallel dumb channels: no GPRS, no TLS, no server in the path.
-        // Whichever arrives first wins; the server de-dupes on event id.
-        // SOS goes to BOTH the parent (direct) and the scanner (relay to Supabase).
-        char sms[160];
-        if (have) {
-            snprintf(sms, sizeof sms,
-                     "SOS from %s. https://maps.google.com/?q=%.5f,%.5f (+/-%dm)",
-                     DEVICE_ID, f.lat, f.lon, (int)f.accuracy_m);
-        } else {
-            snprintf(sms, sizeof sms, "SOS from %s. Position unknown, last known follows.", DEVICE_ID);
-        }
-        modem::sendSms(s_sosNumber, sms);         // direct to parent
-        if (strlen(s_scannerNumber) > 0 && strcmp(s_scannerNumber, s_sosNumber) != 0) {
-            modem::sendSms(s_scannerNumber, sms);  // relay via scanner to Supabase
-        }
-
-        feedback::play(Cue::Sent);
-        s_sent = true;
+        // Start non-blocking SMS sending
+        s_smsStep = 1;
     }
 
-    // TODO: keep refining until SOS_REFINE_WINDOW_MS, then high-rate mode.
+    // Auto-reset SOS after refine window — allows new SOS triggers
+    if (s_sent && millis() - s_triggered >= SOS_REFINE_WINDOW_MS) {
+        s_active = false;
+    }
 }
 
 void cancel() { s_active = false; feedback::play(Cue::Cancelled); }

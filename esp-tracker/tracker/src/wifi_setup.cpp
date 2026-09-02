@@ -55,14 +55,17 @@ body{
 }
 @media(prefers-color-scheme:dark){
   body{ background:#0e1318; color:#e5ebf2 }
+  .card{ background:#161d25; border-color:#2b3641; color:#e5ebf2 }
+  .sub,.hint,.status{ color:#a7b3c1 }
   input{ background:#161d25; color:#e5ebf2; border-color:#2b3641 }
-  .card{ background:#161d25; border-color:#2b3641 }
+  .info{ background:#0d2137; border-color:#1a4a6e; color:#e5ebf2 }
+  .info .code{ background:rgba(255,255,255,.1) }
 }
 .card{
-  max-width:400px; margin:0 auto; padding:24px; border-radius:8px;
-  border:1px solid #cfd8e2; background:#fff;
+  max-width:420px; margin:0 auto; padding:24px; border-radius:8px;
+  border:1px solid #cfd8e2; background:#fff; color:#141a21;
 }
-h1{ margin:0 0 4px; font-size:20px }
+h1{ margin:0 0 4px; font-size:20px; color:#141a21 }
 .sub{ color:#6d7b8b; margin:0 0 20px; font-size:13px }
 label{ display:block; margin:12px 0 4px; font-size:13px; font-weight:600 }
 input{
@@ -81,6 +84,18 @@ input{
   background:#46c3b3; margin-right:6px; vertical-align:middle;
 }
 .status{ font-size:12px; color:#6d7b8b; margin-top:12px; text-align:center }
+.info{
+  margin-top:20px; padding:16px; border-radius:6px;
+  background:#e3f2fd; border:1px solid #90caf9; color:#141a21;
+}
+.info h2{ margin:0 0 10px; font-size:14px; color:#141a21 }
+.info p{ margin:6px 0; font-size:13px; line-height:1.5; color:#141a21 }
+.info .code{
+  display:inline-block; padding:3px 8px; border-radius:3px;
+  background:rgba(0,0,0,.08); font-family:ui-monospace,monospace;
+  font-weight:600; font-size:14px; letter-spacing:.02em;
+}
+.info a{ color:#0b6e68; font-weight:600 }
 </style>
 </head>
 <body>
@@ -101,6 +116,16 @@ input{
 
     <button class="btn" type="submit">Save &amp; reboot</button>
   </form>
+
+  <div class="info">
+    <h2>Connect to dashboard</h2>
+    <p><strong>Device ID:</strong> <span class="code">__DEVICE_ID__</span></p>
+    <p><strong>Claim code:</strong> <span class="code">__CLAIM_CODE__</span></p>
+    <p>1. Open the dashboard: <a href="__DASHBOARD_URL__">__DASHBOARD_URL_SHORT__</a></p>
+    <p>2. Sign up with your email</p>
+    <p>3. Enter the claim code above to pair this tracker</p>
+  </div>
+
   <p class="status"><span class="led"></span>Config portal active — timeout in ~5 min</p>
 </div>
 </body>
@@ -151,6 +176,19 @@ static void handleRoot() {
     page.replace("placeholder=\"+639123456789\"", String("value=\"") + sosVal + "\" placeholder=\"+639123456789\"");
     page.replace("placeholder=\"+639325762230\"", String("value=\"") + scannerVal + "\" placeholder=\"+639325762230\"");
     page.replace("placeholder=\"Ana\"", String("value=\"") + nameVal + "\" placeholder=\"Ana\"");
+
+    // Inject device info for parent dashboard pairing
+    page.replace("__DEVICE_ID__", DEVICE_ID);
+    page.replace("__CLAIM_CODE__", CLAIM_CODE);
+
+    // Dashboard URL — where parents go to pair
+    const char* dashUrl = DASHBOARD_URL;
+    page.replace("__DASHBOARD_URL__", dashUrl);
+    // Short display version (strip https://)
+    String shortUrl = dashUrl;
+    if (shortUrl.startsWith("https://")) shortUrl.remove(0, 8);
+    else if (shortUrl.startsWith("http://")) shortUrl.remove(0, 7);
+    page.replace("__DASHBOARD_URL_SHORT__", shortUrl);
 
     server.send(200, "text/html", page);
 }

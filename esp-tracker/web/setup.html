@@ -237,7 +237,7 @@ python3 -m platformio run -t upload -e scanner   # scanner</pre>
     <li>Select school WiFi, enter password</li>
   </ol>
 
-  <h3>Step 4: Configure tracker SMS numbers</h3>
+  <h3>Step 4: Configure tracker &amp; pair to dashboard</h3>
   <p><strong>Option A &mdash; WiFi captive portal (recommended):</strong></p>
   <ol>
     <li>Power on the tracker while <strong>holding the SOS button</strong> (hold for 2+ seconds until the LED blinks blue)</li>
@@ -247,6 +247,8 @@ python3 -m platformio run -t upload -e scanner   # scanner</pre>
     <li>Tap "Save &amp; reboot" &mdash; tracker saves and restarts</li>
   </ol>
   <div class="tip"><strong>Tip:</strong> If the captive portal doesn't open automatically, go to <code>192.168.4.1</code> in your browser. The config portal times out after 5 minutes and reboots.</div>
+
+  <p>The portal also shows a <strong>"Connect to dashboard"</strong> panel with the device ID, claim code, and a link to the dashboard. The parent can immediately sign up and enter the claim code to pair.</p>
 
   <p><strong>Option B &mdash; BLE:</strong> Connect with nRF Connect, send to FFF2:</p>
   <pre>SCANNER +639325762230
@@ -261,6 +263,7 @@ WIFI   (enters config mode remotely)</pre>
   <p>Use the card writer tool (<code>scanner-uno/card_writer/card_writer_gui.py</code>). It writes the physical card AND registers it in Supabase automatically.</p>
 
   <h3>Step 6: Parent pairs their account</h3>
+  <p>The claim code is shown in the WiFi config portal's "Connect to dashboard" panel. For reference:</p>
   <ol>
     <li>Open the dashboard</li>
     <li>Sign up with email + password</li>

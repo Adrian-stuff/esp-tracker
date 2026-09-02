@@ -1,8 +1,12 @@
 #include "ble_debug.h"
 #include "ble_serial.h"
+#include "smsq.h"
+#include "clock.h"
+#include "store.h"
+#include "net.h"
+#include "../include/pins.h"
 #include <WiFi.h>
-#include <WiFiServer.h>
-#include <cstdarg>
+#include <Arduino.h>
 #include <cstdio>
 #include <cstring>
 
@@ -90,13 +94,31 @@ void service() {
             if (len > 0) {
                 // Handle STATUS command
                 if (strcmp(cmd, "STATUS") == 0) {
-                    dbg("WiFi: %s | IP: %s | Queue: %u | RTC: %s\n",
-                        WiFi.status() == WL_CONNECTED ? "connected" : "disconnected",
+                    dbg("STATUS: WiFi=%s IP=%s RTC=%s Queue=%u SMS: ready=%d CSQ=%d\n",
+                        net::online() ? "online" : "offline",
                         WiFi.localIP().toString().c_str(),
-                        (unsigned)0,  // caller should pass real values
-                        "see LCD");
+                        clockw::ok() ? "OK" : "NO",
+                        (unsigned)store::depth(),
+                        smsq::ready(),
+                        (int)smsq::signalQuality());
+                } else if (strncmp(cmd, "AT", 2) == 0) {
+                    dbg("[AT-SEND] %s\n", cmd);
+                    smsq::sendRaw(cmd);
+                    delay(400);
+                    String resp = "";
+                    while (smsq::serial().available()) {
+                        resp += (char)smsq::serial().read();
+                    }
+                    if (!resp.length()) resp = smsq::getRxBuffer();
+                    dbg("[AT-RESP] %s\n", resp.c_str());
+                } else if (strcmp(cmd, "SIM_PWR") == 0) {
+                    dbg("[SIM900] Pulsing PWRKEY pin 32 LOW for 1.2s...\n");
+                    digitalWrite(PIN_SIM_PWRKEY, LOW);
+                    delay(1200);
+                    digitalWrite(PIN_SIM_PWRKEY, HIGH);
+                    dbg("[SIM900] PWRKEY pulse complete\n");
                 } else if (strcmp(cmd, "HELP") == 0) {
-                    dbg("Commands: STATUS, HELP\n");
+                    dbg("Commands: STATUS, AT, AT+CSQ, AT+CREG?, AT+CPIN?, ATI, SIM_PWR, HELP\n");
                 } else {
                     dbg("Unknown: %s (type HELP)\n", cmd);
                 }

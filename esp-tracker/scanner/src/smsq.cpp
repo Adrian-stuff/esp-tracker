@@ -1,4 +1,5 @@
 #include "smsq.h"
+#include "ble_debug.h"
 #include "../include/pins.h"
 #include "../include/config.h"
 #include <Arduino.h>
@@ -22,11 +23,13 @@ static Msg     s_q[SMS_QUEUE_DEPTH];
 static uint8_t s_head = 0, s_count = 0;
 
 enum class St : uint8_t { Boot, Idle, SendCmd, WaitPrompt, SendBody, WaitOk, Cooldown };
-static St       s_st      = St::Boot;
-static uint32_t s_at      = 0;      // when the current step started
-static bool     s_ready   = false;
-static int8_t   s_csq     = -1;
-static uint32_t s_lastReg = 0;
+static St       s_st        = St::Boot;
+static uint32_t s_at        = 0;      // when the current step started
+static uint32_t s_lastProbe = 0;
+static uint8_t  s_bootTries = 0;
+static bool     s_ready     = false;
+static int8_t   s_csq       = -1;
+static uint32_t s_lastReg   = 0;
 static String   s_rx;
 
 static void write(const char* cmd) {
@@ -70,7 +73,8 @@ size_t depth()  { return s_count; }
 int8_t signalQuality() { return s_csq; }
 HardwareSerial& serial() { return Sim; }
 bool isIdle() { return s_st == St::Idle; }
-
+void sendRaw(const char* cmd) { s_rx = ""; write(cmd); }
+String getRxBuffer() { return s_rx; }
 bool enqueue(const char* number, const char* text, const char* ref) {
     if (!SIM900_PRESENT) return false;
     if (s_count >= SMS_QUEUE_DEPTH) return false;
@@ -103,41 +107,42 @@ void service() {
 
     switch (s_st) {
     case St::Boot:
-        // First pass: let the module stabilize, then probe with AT.
-        // If the modem was already on (common after ESP32 reset — PWRKEY
-        // held HIGH to prevent floating), it responds immediately and we
-        // skip the power cycle entirely. The ESC bytes in begin() already
-        // cleared any stuck AT+CMGS state.
-        if (now - s_at < 3000) return;          // let the module stabilize
-        if (now - s_at < 6000) {
-            s_rx = ""; write("AT");
-            return;                             // wait for response next call
-        }
-        if (sawAny("OK", "+CREG")) {
-            // Modem already on — configure and go
+        // First pass: let the module stabilize, then probe gently with AT (1s interval)
+        if (now - s_at < 2000) return;
+        if (sawAny("OK", "+CREG") || sawAny("SMS Ready", "Call Ready")) {
+            ble_debug::dbg("[sim900] modem responsive: OK\n");
             s_rx = "";
             write("ATE0");
             write("AT+CMGF=1");
             s_rx = ""; write("AT+CREG?");
-            s_st = St::Idle; s_at = now; s_lastReg = now;
+            s_st = St::Idle; s_at = now; s_lastReg = now; s_bootTries = 0;
             return;
         }
-        // No response after 6 s — power cycle via PWRKEY toggle
-        s_rx = "";
-        digitalWrite(PIN_SIM_PWRKEY, LOW);  delay(1200);
-        digitalWrite(PIN_SIM_PWRKEY, HIGH);
-        s_st = St::Boot; s_at = now;             // re-enter, re-probe after 6 s
+        if (now - s_lastProbe >= 1000) {
+            s_lastProbe = now;
+            write("AT");
+        }
+        // No response after 8 s — toggle PWRKEY
+        if (now - s_at > 8000) {
+            s_bootTries++;
+            ble_debug::dbg("[sim900] no response after 8s (try %u), toggling PWRKEY (rx='%s')\n",
+                           (unsigned)s_bootTries, s_rx.c_str());
+            s_rx = "";
+            digitalWrite(PIN_SIM_PWRKEY, LOW);  delay(1200);
+            digitalWrite(PIN_SIM_PWRKEY, HIGH);
+            s_st = St::Boot; s_at = now; s_lastProbe = now;
+        }
         return;
 
     case St::Idle: {
-        // Registration + signal, polled gently. Mains powered, so unlike the
-        // tracker there is no reason to sleep the modem between messages.
-        if (now - s_lastReg > 20000) {
+        // Registration + signal, polled gently.
+        if (now - s_lastReg > 10000) {
             s_lastReg = now;
-            s_ready = sawAny("+CREG: 0,1", "+CREG: 0,5");
+            s_ready = sawAny("+CREG: 0,1", "+CREG: 0,5") || sawAny("+CREG: 1", "+CREG: 5");
             int i = s_rx.indexOf("+CSQ:");
             if (i >= 0) s_csq = s_rx.substring(i + 5, s_rx.indexOf(',', i)).toInt();
-            s_rx = ""; write("AT+CREG?"); delay(40); write("AT+CSQ");
+            ble_debug::dbg("[sim900] poll: ready=%d CSQ=%d\n", s_ready, s_csq);
+            s_rx = ""; write("AT+CREG?"); delay(50); write("AT+CSQ");
         }
         if (!s_count || !s_ready) return;
         s_rx = "";

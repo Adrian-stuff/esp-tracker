@@ -41,4 +41,6 @@ namespace smsq {
     // outbound state machine.
     HardwareSerial& serial();
     bool isIdle();                // modem is in Idle state, safe for other AT cmds
+    void sendRaw(const char* cmd);
+    String getRxBuffer();
 }

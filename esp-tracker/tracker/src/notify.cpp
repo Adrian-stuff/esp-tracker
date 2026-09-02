@@ -43,7 +43,7 @@ bool fire(Event e, const char* detail) {
             snprintf(body, sizeof body, "%s: %s", CHILD_NAME, detail ? detail : ""); break;
     }
 
-    if (!modem::sendSms(SOS_SMS_PRIMARY, body)) return false;
+    if (!modem::sendSms(s_sosNumber, body)) return false;
     s_last[i] = now;
     return true;
 }

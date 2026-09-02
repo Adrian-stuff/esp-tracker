@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tracker — Attendance</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="manifest" href="/manifest.json">
+</head>
+<body>
+
+<div id="signin" hidden>
+  <form id="signin-form">
+    <h2 id="signin-heading">Sign in</h2>
+    <input id="email" type="email" placeholder="you@example.com" autocomplete="username" required>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <input id="password2" type="password" placeholder="Confirm password" autocomplete="new-password" hidden>
+    <button type="submit" id="signin-submit">Sign in</button>
+    <p id="signin-error" class="err"></p>
+    <p id="signin-note" class="hint" hidden></p>
+    <button type="button" id="signin-toggle" class="linkish">Need an account? Create one</button>
+  </form>
+</div>
+
+<header>
+  <a href="/" class="menu-link" title="Back to menu">&#8592; Menu</a>
+  <h1>Attendance</h1>
+  <div id="conn" class="chip">connecting…</div>
+  <button id="signout" class="linkish">Sign out</button>
+</header>
+
+<main class="att-main">
+  <div class="att-cols">
+    <section class="panel att-panel">
+      <h2>Gate stations</h2>
+      <p class="hint">Status reported by each scanner on its last check-in. Wi-Fi credentials, the
+        API server and the SMS numbers are configured on the device itself, at its own captive
+        portal (power it on near this device and join <b>Tracker-Scanner</b>) — nothing here
+        reaches the scanner remotely, only the name shown on this dashboard.</p>
+      <div id="scanners"><p class="muted">Loading…</p></div>
+    </section>
+
+    <section class="panel att-panel">
+      <h2>Attendance by day</h2>
+      <div id="attendance-days"><p class="muted">No data yet</p></div>
+    </section>
+
+    <section class="panel att-panel">
+      <h2>Recent taps</h2>
+      <ul id="attendance"><li class="muted">No taps yet</li></ul>
+    </section>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="/config.js"></script>
+<script src="/common.js"></script>
+<script src="/attendance.js"></script>
+</body>
+</html>

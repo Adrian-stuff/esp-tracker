@@ -59,7 +59,7 @@ uint32_t fetchedAt() { return s_at; }
 bool refresh() {
     WiFiClient      plain;
     WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setCACert(AMAZON_ROOT_CA_1);
+    if (API_USE_TLS) tls.setInsecure();
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;

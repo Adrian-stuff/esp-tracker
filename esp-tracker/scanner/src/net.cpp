@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "../include/config.h"
 #include "../include/certs.h"
+#include "ble_debug.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -64,11 +65,30 @@ void begin() {
     s_wm.setConfigPortalTimeout(WIFI_AP_TIMEOUT_S);
     s_wm.setMinimumSignalQuality(15);
 
-    // Try default compile-time credentials first, before opening the portal.
-    // This avoids forcing every unit through 192.168.4.1 when the SSID and
-    // password are already known at compile time.
+    // First: try saved credentials (from the portal or a previous WiFiManager
+    // session).  WiFi.begin() with no args uses whatever is in NVS.
+    Serial.println(F("[net] Trying saved credentials..."));
+    WiFi.begin();
+    {
+        uint32_t start = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+            delay(250);
+            Serial.print(".");
+        }
+        Serial.println();
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.printf("[net] Connected (saved) to %s, IP=%s\n",
+                          WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+            WiFi.setAutoReconnect(true);
+            return;
+        }
+    }
+
+    // Second: try compile-time defaults (for brand-new units that have never
+    // been through the portal).
     if (strlen(WIFI_SSID) > 0) {
         Serial.printf("[net] Trying default SSID: %s\n", WIFI_SSID);
+        WiFi.disconnect();
         WiFi.begin(WIFI_SSID, WIFI_PASS);
         uint32_t start = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
@@ -77,7 +97,7 @@ void begin() {
         }
         Serial.println();
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("[net] Connected to %s, IP=%s\n",
+            Serial.printf("[net] Connected (default) to %s, IP=%s\n",
                           WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
             WiFi.setAutoReconnect(true);
             return;
@@ -139,7 +159,7 @@ size_t drain() {
 
     WiFiClient      plain;
     WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setCACert(AMAZON_ROOT_CA_1);
+    if (API_USE_TLS) tls.setInsecure();
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     // /functions/v1/ingest, not /api/ingest/taps: Supabase only serves the
@@ -152,7 +172,11 @@ size_t drain() {
     int code = http.POST(body);
     http.end();
 
-    if (code != 200) return 0;
+    if (code != 200) {
+        ble_debug::dbg("drain FAIL: HTTP %d\n", code);
+        return 0;
+    }
+    ble_debug::dbg("drain OK: %u sent, %u left\n", (unsigned)n, (unsigned)store::depth());
     store::commit(n);
     return n;
 }
@@ -168,7 +192,7 @@ bool postRelaySms(const char* sender, const char* text) {
 
     WiFiClient      plain;
     WiFiClientSecure tls;
-    if (API_USE_TLS) tls.setCACert(AMAZON_ROOT_CA_1);
+    if (API_USE_TLS) tls.setInsecure();
     WiFiClient& client = API_USE_TLS ? (WiFiClient&)tls : (WiFiClient&)plain;
 
     HTTPClient http;

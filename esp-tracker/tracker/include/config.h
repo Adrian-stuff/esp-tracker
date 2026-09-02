@@ -30,13 +30,14 @@ static constexpr uint32_t SOS_HIGHRATE_FOR_MS  = 30UL * 60UL * 1000UL;
 static constexpr uint8_t  SOS_MAX_PER_HOUR     = 5;
 
 // ---------------------------------------------------------------------------
-// Child-facing feedback. See feedback.h — the LED substitution is not neutral.
+// Child-facing feedback — RGB LED (common cathode, active HIGH).
 // ---------------------------------------------------------------------------
-// A buzz is felt through a pocket; an LED has to be looked at. So the ack cue
-// REPEATS, giving the child time to look down and see that their parent knows.
-// Restore to a one-shot when the motor arrives.
+// No piezo buzzer fitted. All feedback is visual via the RGB LED:
+//   SOS cues  : red (armed, sent, acked, cancelled)
+//   Low batt  : green tick
+//   The motor is out of stock; swap is a config flag change.
 static constexpr bool     FEEDBACK_USE_MOTOR   = false;   // true once stocked
-static constexpr bool     FEEDBACK_USE_PIEZO   = true;
+static constexpr bool     FEEDBACK_USE_PIEZO   = false;   // no buzzer fitted
 static constexpr uint32_t FEEDBACK_ACK_HOLD_MS = 20000;   // 0 = one-shot (motor)
 
 // *** THINK BEFORE SETTING THIS FALSE ***
@@ -98,7 +99,7 @@ static constexpr uint32_t FIX_BUDGET_GNSS_MS  = 30000;  // never completes indoo
 #define API_PORT       443
 #define API_PATH_EVENTS  "/api/ingest/events"
 #define DEVICE_ID      "tracker-01"
-#define DEVICE_TOKEN   "change-me"      // sent as a bearer header, per-device
+#define DEVICE_TOKEN   "myzjFRtVrfcmJ0ecEooZAYVTAWUzsaPTI9-smDrcdCk"  // bearer token for Supabase ingest
 
 // HTTP, not MQTT. Once GPRS became bursty (below), a persistent broker session
 // bought nothing: no broker to run, no separate ingest worker, and the HTTP 200
@@ -135,7 +136,7 @@ static constexpr uint32_t CLOCK_MAX_SKEW_S   = 300;
 //            makes on-demand location work without holding a TCP socket open.
 //
 // The server de-duplicates the SMS against the HTTP event by id.
-#define SOS_SMS_PRIMARY   "+639000000000"
+#define SOS_SMS_PRIMARY   "+639109943152"
 #define SOS_SMS_SECONDARY "+639000000000"
 
 // UPDATE (2026-08-31): "SMS as out-of-band, GPRS as the real uplink" above
@@ -159,7 +160,11 @@ static constexpr uint32_t CLOCK_MAX_SKEW_S   = 300;
 // which relays parseable reports on to the server — see report.h and
 // server/app/tracker_sms.py for the wire format both ends must agree on
 // byte for byte.
-#define SCANNER_SMS_NUMBER "change-me"
+#define SCANNER_SMS_NUMBER "+639325762230"
+
+// Runtime-configurable via BLE. Defaults above, overridden by Preferences.
+extern char s_sosNumber[];
+extern char s_scannerNumber[];
 
 // Adaptive report cadence — see motion.h for the state machine driving
 // this. Left at the original design's numbers even though every report is
@@ -186,7 +191,7 @@ static constexpr uint32_t NOTIFY_BATTERY_COOLDOWN_S  = 6 * 3600;
 
 // Shared secret for inbound SMS commands. An unauthenticated SMS command
 // channel is a remote-control interface for anyone who learns the number.
-#define SMS_CMD_SECRET    "change-me"
+#define SMS_CMD_SECRET    "5Mz4hXMEQVVGt77MOGjJVMHglz8RaQ4h"
 
 // Prepaid load expiry silently kills the uplink. Check balance periodically and
 // surface it on the dashboard before it hits zero. Globe *143#, Smart *123#.

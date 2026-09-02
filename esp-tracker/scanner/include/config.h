@@ -64,7 +64,7 @@ static constexpr uint32_t DRAIN_INTERVAL_MS = 15000;
 static constexpr uint16_t ROSTER_MAX_CARDS  = 400;
 static constexpr uint32_t ROSTER_TTL_S      = 6UL * 3600UL;
 static constexpr uint32_t ROSTER_CHECK_MS   = 10UL * 60UL * 1000UL;
-#define ROSTER_SALT   "change-me-too"            // must match the roster function
+#define ROSTER_SALT   "7c59IwikdA0xsaMjJaQ8Kw"           // must match the roster function
 
 // ---------------------------------------------------------------------------
 // Feedback LEDs

@@ -59,8 +59,9 @@ void service() {
         }
         store::push(ev);
 
-        // Parallel dumb channel: no GPRS, no TLS, no server in the path.
+        // Parallel dumb channels: no GPRS, no TLS, no server in the path.
         // Whichever arrives first wins; the server de-dupes on event id.
+        // SOS goes to BOTH the parent (direct) and the scanner (relay to Supabase).
         char sms[160];
         if (have) {
             snprintf(sms, sizeof sms,
@@ -69,7 +70,10 @@ void service() {
         } else {
             snprintf(sms, sizeof sms, "SOS from %s. Position unknown, last known follows.", DEVICE_ID);
         }
-        modem::sendSms(SOS_SMS_PRIMARY, sms);
+        modem::sendSms(s_sosNumber, sms);         // direct to parent
+        if (strlen(s_scannerNumber) > 0 && strcmp(s_scannerNumber, s_sosNumber) != 0) {
+            modem::sendSms(s_scannerNumber, sms);  // relay via scanner to Supabase
+        }
 
         feedback::play(Cue::Sent);
         s_sent = true;

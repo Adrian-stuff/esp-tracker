@@ -3,29 +3,21 @@
 #include "../include/config.h"
 #include <Arduino.h>
 
+// RGB LED feedback (common anode, active LOW).
+//
+// Common anode → 3.3V. GPIO LOW = LED ON, GPIO HIGH = LED OFF.
+// Color scheme:
+//   Armed → orange (red + green)
+//   Cancelled → red
+//   Sent → red with faint blue
+//   Acked → green (parent confirmed)
+//   LowBattery → red tick
+
 namespace feedback {
 
 struct Step { uint16_t on_ms; uint16_t off_ms; };
 
-// Is this cue allowed to make noise? SOS cues are silent by default — see
-// FEEDBACK_SILENT_SOS in config.h. Getting this wrong is not a cosmetic bug.
-static bool audible(Cue c) {
-    if (!FEEDBACK_USE_PIEZO) return false;
-    if (!FEEDBACK_SILENT_SOS) return true;
-    return !(c == Cue::Armed || c == Cue::Sent || c == Cue::Acked || c == Cue::Cancelled);
-}
-
-// Tone per cue, Hz. 0 = silent.
-static uint16_t toneFor(Cue c) {
-    switch (c) {
-        case Cue::LowBattery: return 1200;
-        default:              return 2400;
-    }
-}
-
-// Patterns are chosen so a child can tell them apart without counting blinks:
-// a flutter, a long steady glow, and a calm repeating heartbeat are three
-// different things at a glance.
+// LED patterns — same visual signatures as before, now via RGB colors.
 static const Step P_ARMED[]     = {{90,90},{90,90},{90,0}};        // quick flutter
 static const Step P_CANCELLED[] = {{700,0}};                        // one long
 static const Step P_SENT[]      = {{2000,0}};                       // steady glow
@@ -50,27 +42,67 @@ static bool     s_on      = false;
 static uint32_t s_next    = 0;
 static uint32_t s_started = 0;
 
-static void drive(bool on) {
-    // PIN_FEEDBACK is the LED now and the vibration motor later — same GPIO, so
-    // the upgrade is a wiring change plus a config flag, not a code change.
-    digitalWrite(PIN_FEEDBACK, on ? HIGH : LOW);
+// Set RGB LED color. Common anode: 0 = full brightness, 255 = off.
+static void setColor(uint8_t r, uint8_t g, uint8_t b) {
+    analogWrite(PIN_LED_R, 255 - r);
+    analogWrite(PIN_LED_G, 255 - g);
+    analogWrite(PIN_LED_B, 255 - b);
+}
 
-    if (!audible(s_cue)) { noTone(PIN_PIEZO); return; }
-    if (on) tone(PIN_PIEZO, toneFor(s_cue));
-    else    noTone(PIN_PIEZO);
+// Drive the LED for the current cue — each cue gets its own color.
+static void drive(bool on) {
+    if (!on) {
+        setColor(0, 0, 0);
+        return;
+    }
+
+    switch (s_cue) {
+        case Cue::Armed:
+            setColor(255, 100, 0);   // orange — "SOS registered, hold to cancel"
+            break;
+        case Cue::Cancelled:
+            setColor(255, 0, 0);     // red — "cancelled"
+            break;
+        case Cue::Sent:
+            setColor(255, 0, 50);    // red with faint blue — "message sent"
+            break;
+        case Cue::Acked:
+            setColor(0, 255, 0);     // green — "parent has been told"
+            break;
+        case Cue::LowBattery:
+            setColor(255, 0, 0);     // red dim tick — "charge me"
+            break;
+        default:
+            setColor(0, 0, 0);
+            break;
+    }
 }
 
 void begin() {
-    pinMode(PIN_FEEDBACK, OUTPUT);
-    pinMode(PIN_PIEZO, OUTPUT);
-    digitalWrite(PIN_FEEDBACK, LOW);
-    noTone(PIN_PIEZO);
+    // Configure RGB LED pins as outputs (LEDC PWM channels auto-assigned)
+    pinMode(PIN_LED_R, OUTPUT);
+    pinMode(PIN_LED_G, OUTPUT);
+    pinMode(PIN_LED_B, OUTPUT);
+    setColor(0, 0, 0);
+}
+
+void ledTest() {
+    // Red for 1s
+    setColor(255, 0, 0);
+    delay(1000);
+    // Green for 1s
+    setColor(0, 255, 0);
+    delay(1000);
+    // Blue for 1s
+    setColor(0, 0, 255);
+    delay(1000);
+    // Off
+    setColor(0, 0, 0);
 }
 
 void clear() {
     s_cue = Cue::None;
-    digitalWrite(PIN_FEEDBACK, LOW);
-    noTone(PIN_PIEZO);
+    setColor(0, 0, 0);
 }
 
 void play(Cue c) {
@@ -99,7 +131,7 @@ void service() {
         if (off == 0 && s_step + 1 >= p.n) {     // pattern complete
             if (p.hold_ms && now - s_started < p.hold_ms) {
                 s_step = 0; s_on = true; drive(true);
-                s_next = now + p.steps[0].on_ms;
+                s_next = now + PATTERNS[(uint8_t)s_cue].steps[0].on_ms;
             } else {
                 clear();
             }

@@ -44,4 +44,15 @@ namespace modem {
     bool cellInfo(uint16_t& mcc, uint16_t& mnc, uint16_t& lac, uint32_t& cellId, int8_t& rssi);
 
     int8_t signalQuality();     // AT+CSQ, -1 on failure
+
+    // Network registration status — AT+CREG?
+    // Returns: 0=not registered, 1=home, 2=searching, 3=denied, 5=roaming, -1=error
+    int8_t networkStatus();
+
+    // SMS command interface — polls for incoming SMS and processes config commands.
+    // Format: <secret> <command>  e.g. "changeme SOS +63912345678"
+    // Returns true if a command was processed and a reply SMS was sent.
+    bool pollSmsCommand(const char* secret,
+                        void (*onSetSos)(const char*),
+                        void (*onSetScanner)(const char*));
 }

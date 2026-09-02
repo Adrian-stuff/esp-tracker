@@ -179,7 +179,35 @@ bool sendSms(const char* number, const char* text) {
 }
 
 bool cellInfo(uint16_t& mcc, uint16_t& mnc, uint16_t& lac, uint32_t& cellId, int8_t& rssi) {
-    (void)mcc;(void)mnc;(void)lac;(void)cellId;(void)rssi; return false;  // TODO: AT+CENG=1,1 — doesn't need GPRS, worth picking up separately from the HTTP stack above
+    // AT+CENG=1,1 enables cell engineer mode and returns serving + neighbor cells.
+    // This does NOT require GPRS — it works on plain 2G registration.
+    while (s_serial.available()) s_serial.read();
+    atSend("AT+CENG=1,1");
+    char buf[256];
+    uint8_t n = readFor(buf, sizeof buf, 3000);
+
+    // Response format: +CENG: <arfcn>,<rxlev>,<bsic>,<cellid>,<lac>,<mcc>,<mnc>,...
+    // We only need the first line (serving cell).
+    char* p = strstr(buf, "+CENG:");
+    if (!p) return false;
+
+    // Skip the +CENG: header and parse serving cell fields
+    char* line = p + 6;
+    while (*line == ' ') line++;
+
+    // Parse: arfcn,rxlev,bsic,cellid,lac,mcc,mnc
+    int arfcn, rxlev, bsic, cid, lacVal, mccVal, mncVal;
+    if (sscanf(line, "%d,%d,%d,%d,%d,%d,%d",
+               &arfcn, &rxlev, &bsic, &cid, &lacVal, &mccVal, &mncVal) < 7) return false;
+
+    mcc = (uint16_t)mccVal;
+    mnc = (uint16_t)mncVal;
+    lac = (uint16_t)lacVal;
+    cellId = (uint32_t)cid;
+    // rxlev is received signal strength in dBm relative to -110 dBm.
+    // Convert to approximate RSSI: rssi = rxlev - 110
+    rssi = (int8_t)(rxlev - 110);
+    return true;
 }
 
 int8_t signalQuality() {
@@ -191,6 +219,97 @@ int8_t signalQuality() {
     if (!p) return -1;
     int csq = atoi(p + 5);
     return (csq == 99) ? (int8_t)-1 : (int8_t)csq;
+}
+
+int8_t networkStatus() {
+    while (s_serial.available()) s_serial.read();
+    atSend("AT+CREG?");
+    char buf[48];
+    readFor(buf, sizeof buf, 2000);
+    char* p = strstr(buf, "+CREG:");
+    if (!p) return -1;
+    // Response: +CREG: <n>,<stat>[,<lac>,<ci>]
+    int n, stat;
+    if (sscanf(p + 6, "%d,%d", &n, &stat) < 2) return -1;
+    return (int8_t)stat;
+}
+
+// SMS command polling — reads all unread SMS, processes config commands.
+//
+// Wire format: "<secret> SOS <number>" or "<secret> SCANNER <number>"
+// The secret prevents anyone who learns the SIM number from reconfiguring
+// the device. Reply SMS confirms what was set; the message is deleted after
+// processing so it doesn't accumulate.
+//
+// This runs synchronously (one AT exchange per SMS) — acceptable because
+// SMS commands are infrequent and the loop already blocks on sendSms().
+bool pollSmsCommand(const char* secret,
+                    void (*onSetSos)(const char*),
+                    void (*onSetScanner)(const char*)) {
+    while (s_serial.available()) s_serial.read();
+    atSend("AT+CMGL=\"REC UNREAD\"");
+    char buf[512];
+    uint8_t n = readFor(buf, sizeof buf, 4000);
+
+    bool processed = false;
+    char* p = buf;
+    while ((p = strstr(p, "+CMGL:")) != nullptr) {
+        // Parse: +CMGL: <idx>,"REC UNREAD","+<sender>","","+<date>,<time><tz>"
+        int idx;
+        char sender[24];
+        if (sscanf(p + 6, "%d,\"REC UNREAD\",\"%23[^\"]\"", &idx, sender) < 2) { p++; continue; }
+
+        // Find the body: starts after the next \r\n
+        char* bodyStart = strstr(p, "\r\n");
+        if (!bodyStart) { p++; continue; }
+        bodyStart += 2;
+
+        // Body ends at the next +CMGL or end of buffer
+        char* bodyEnd = strstr(bodyStart, "+CMGL:");
+        if (!bodyEnd) bodyEnd = buf + n;
+
+        // Trim trailing whitespace
+        while (bodyEnd > bodyStart && (*(bodyEnd - 1) == '\r' || *(bodyEnd - 1) == '\n' || *(bodyEnd - 1) == ' '))
+            bodyEnd--;
+
+        char body[256];
+        size_t bodyLen = bodyEnd - bodyStart;
+        if (bodyLen >= sizeof body) bodyLen = sizeof body - 1;
+        memcpy(body, bodyStart, bodyLen);
+        body[bodyLen] = '\0';
+
+        // Check for secret prefix
+        size_t secLen = strlen(secret);
+        if (bodyLen > secLen && strncmp(body, secret, secLen) == 0) {
+            const char* cmd = body + secLen;
+            while (*cmd == ' ') cmd++;  // skip spaces
+
+            char reply[64];
+            if (strncmp(cmd, "SOS ", 4) == 0) {
+                const char* num = cmd + 4;
+                while (*num == ' ') num++;
+                onSetSos(num);
+                snprintf(reply, sizeof reply, "SOS number set to %s", num);
+            } else if (strncmp(cmd, "SCANNER ", 8) == 0) {
+                const char* num = cmd + 8;
+                while (*num == ' ') num++;
+                onSetScanner(num);
+                snprintf(reply, sizeof reply, "Scanner number set to %s", num);
+            } else {
+                snprintf(reply, sizeof reply, "Unknown cmd: %s", cmd);
+            }
+
+            // Reply and delete the processed message
+            sendSms(sender, reply);
+            char delCmd[16];
+            snprintf(delCmd, sizeof delCmd, "AT+CMGD=%d", idx);
+            atCmd(delCmd, "OK", 2000);
+            processed = true;
+        }
+
+        p = bodyEnd;
+    }
+    return processed;
 }
 
 }

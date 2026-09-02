@@ -1,8 +1,8 @@
 // Scanner relay — receives SMS forwarded by the scanner's SIM900 modem.
 //
 // The scanner texts whatever it receives from the tracker's SIM800L to this
-// endpoint. This function parses the SMS (LOC position report or WIFISCAN
-// WiFi scan), verifies the HMAC, and stores the data.
+// endpoint. This function parses the SMS (LOC position report, WIFISCAN
+// WiFi scan, or SOS alert), verifies the HMAC, and stores the data.
 //
 // Runs with the SERVICE ROLE key, so it bypasses RLS.
 //
@@ -28,6 +28,26 @@ async function sha256(s: string) {
 
 const ts = (epoch: number) => new Date(epoch * 1000).toISOString();
 
+// Parse SOS SMS format from tracker firmware:
+//   "SOS from <device_id>. https://maps.google.com/?q=<lat>,<lon> (+/-<acc>m)"
+//   "SOS from <device_id>. Position unknown, last known follows."
+//   "SOS from <device_id>. Position unknown."
+function parseSos(text: string): { deviceId: string; lat?: number; lon?: number; accuracy_m?: number } | null {
+  const m = text.match(/^SOS from (.+?)\.\s/);
+  if (!m) return null;
+  const deviceId = m[1];
+  const coordMatch = text.match(/q=(-?\d+\.?\d*),(-?\d+\.?\d*)\s*\(\+\/-(\d+)m\)/);
+  if (coordMatch) {
+    return {
+      deviceId,
+      lat: parseFloat(coordMatch[1]),
+      lon: parseFloat(coordMatch[2]),
+      accuracy_m: parseInt(coordMatch[3], 10),
+    };
+  }
+  return { deviceId };
+}
+
 Deno.serve(async (req) => {
   const auth = req.headers.get("authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return json({ error: "missing device token" }, 401);
@@ -43,10 +63,59 @@ Deno.serve(async (req) => {
   const now = new Date().toISOString();
   const receivedAt = body.received_at ?? now;
 
-  // Try LOC format first
+  // --- SOS format (sends directly to parent, scanner relays to Supabase) ---
+  const sos = parseSos(body.text);
+  if (sos) {
+    // Look up the tracker by device_id from the SMS body
+    const { data: tracker } = await db.from("devices").select("id")
+      .eq("id", sos.deviceId).eq("kind", "tracker").eq("active", true).maybeSingle();
+    if (!tracker) return json({ ok: true, handled: false });
+
+    const eventId = `${tracker.id}-sos-${Date.now()}`;
+
+    // Store location if we have coordinates
+    let locId: number | null = null;
+    if (sos.lat != null && sos.lon != null) {
+      const { data: loc } = await db.from("locations").upsert({
+        event_id: `${eventId}-loc`, device_id: tracker.id,
+        lat: sos.lat, lon: sos.lon,
+        accuracy_m: sos.accuracy_m ?? 100, source: "gnss",
+        recorded_at: now, received_at: receivedAt,
+      }, { onConflict: "event_id", ignoreDuplicates: true }).select("id").maybeSingle();
+      locId = loc?.id ?? null;
+    }
+
+    // Insert SOS event
+    const { data: sosEvent } = await db.from("sos_events").insert({
+      event_id: eventId, device_id: tracker.id,
+      triggered_at: now, received_at: receivedAt,
+      latency_ms: 0,
+      first_location_id: locId, best_location_id: locId,
+      device_sms_sent: true,  // tracker sent SMS directly to parent
+    }).select("id").maybeSingle();
+
+    if (sosEvent) {
+      // Rung 1: realtime push (implicit via Realtime publication)
+      await db.from("alerts").insert({
+        sos_event_id: sosEvent.id, channel: "realtime", recipient: "dashboard",
+      });
+
+      // Queue rungs 2-4 for dispatch cron
+      const nowMs = Date.now();
+      await db.from("alert_queue").insert([
+        { sos_event_id: sosEvent.id, channel: "sms2",   due_at: new Date(nowMs + 60_000).toISOString() },
+        { sos_event_id: sosEvent.id, channel: "voice",  due_at: new Date(nowMs + 180_000).toISOString() },
+        { sos_event_id: sosEvent.id, channel: "voice2", due_at: new Date(nowMs + 300_000).toISOString() },
+      ]);
+    }
+
+    await db.from("devices").update({ last_seen_at: receivedAt }).eq("id", tracker.id);
+    return json({ ok: true, handled: true, type: "sos" });
+  }
+
+  // --- LOC format (routine position report) ---
   const loc = await parseLoc(body.text, SMS_CMD_SECRET);
   if (loc) {
-    // Look up the tracker by phone number
     const { data: tracker } = await db.from("devices").select("id")
       .eq("msisdn", body.sender).eq("kind", "tracker").eq("active", true).maybeSingle();
     if (!tracker) return json({ ok: true, handled: false });
@@ -61,17 +130,16 @@ Deno.serve(async (req) => {
     if (error) console.error("[relay-sms] location upsert error:", error);
 
     await db.from("devices").update({ last_seen_at: receivedAt }).eq("id", tracker.id);
-    return json({ ok: true, handled: true });
+    return json({ ok: true, handled: true, type: "loc" });
   }
 
-  // Try WIFISCAN format
+  // --- WIFISCAN format (WiFi BSSID scan for place matching) ---
   const wifi = await parseWifiScan(body.text, SMS_CMD_SECRET);
   if (wifi) {
     const { data: tracker } = await db.from("devices").select("id")
       .eq("msisdn", body.sender).eq("kind", "tracker").eq("active", true).maybeSingle();
     if (!tracker) return json({ ok: true, handled: false });
 
-    // Hash BSSIDs and try to match a known place
     const aps = await Promise.all(wifi.aps.map(async (a) => ({
       h: (await sha256(a.bssid.toLowerCase())).slice(0, 16),
       ssid: a.ssid.slice(0, 32),
@@ -104,12 +172,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Store the WiFi scan
     await db.from("wifi_scans").insert({
       device_id: tracker.id, recorded_at: ts(wifi.recorded_at), place_id: placeId, aps,
     });
 
-    // If a place matched, also store a location entry
     if (placeId && placeLat != null && placeLon != null) {
       const eventId = `${tracker.id}-wifi-${wifi.recorded_at}`;
       await db.from("locations").upsert({
@@ -121,7 +187,7 @@ Deno.serve(async (req) => {
     }
 
     await db.from("devices").update({ last_seen_at: receivedAt }).eq("id", tracker.id);
-    return json({ ok: true, handled: true });
+    return json({ ok: true, handled: true, type: "wifiscan" });
   }
 
   // Unknown format — accepted but not handled

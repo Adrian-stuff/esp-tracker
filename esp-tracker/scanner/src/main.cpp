@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <time.h>
 #include "../include/pins.h"
 #include "../include/config.h"
 #include "reader.h"
@@ -14,6 +15,7 @@
 #include "card.h"
 #include "lcd.h"
 #include "settings.h"
+#include "ble_debug.h"
 
 // Gate attendance station.
 //
@@ -71,10 +73,12 @@ void setup() {
     // If the portal was active and timed out, the ESP32 rebooted inside net::begin().
     if (net::online()) { clockw::syncFromNtp(); roster::refresh(); }
 
-    Serial.printf("scanner up | rtc=%d roster=%u queued=%u sms=%s\n",
-                  clockw::ok(), (unsigned)roster::size(), (unsigned)store::depth(),
-                  !SIM900_PRESENT ? "not fitted (server will send)"
-                                  : (smsq::ready() ? "ready" : "no signal"));
+    ble_debug::begin();
+
+    ble_debug::dbg("scanner up | rtc=%d roster=%u queued=%u sms=%s\n",
+                   clockw::ok(), (unsigned)roster::size(), (unsigned)store::depth(),
+                   !SIM900_PRESENT ? "not fitted (server will send)"
+                                   : (smsq::ready() ? "ready" : "no signal"));
 
     lcd::show(statusSymbol(), "Loading...");
     s_ready = true;
@@ -84,6 +88,7 @@ void loop() {
     uint32_t now = millis();
 
     net::service();
+    ble_debug::service();
     ui::service();
     smsq::service();      // advances one AT step per loop; never blocks the reader
     sms::pollInbox();     // polls for tracker SMS, relays to server via WiFi
@@ -146,8 +151,8 @@ void loop() {
             // Release the card after we're done reading
             reader::release();
         }
-        Serial.printf("tap %s @%lu queued=%u sms=%d\n", t.uid,
-                      (unsigned long)t.recorded_at, (unsigned)store::depth(), t.sms_sent);
+        ble_debug::dbg("tap %s @%lu queued=%u sms=%d\n", t.uid,
+                       (unsigned long)t.recorded_at, (unsigned)store::depth(), t.sms_sent);
     } else if (reader::sawDuplicate()) {
         ui::play(Cue::Duplicate);
     }
@@ -156,8 +161,8 @@ void loop() {
     if (now - s_lastDrain >= DRAIN_INTERVAL_MS) {
         s_lastDrain = now;
         size_t sent = net::drain();
-        if (sent) Serial.printf("delivered %u, %u left\n",
-                                (unsigned)sent, (unsigned)store::depth());
+        if (sent) ble_debug::dbg("delivered %u, %u left\n",
+                                 (unsigned)sent, (unsigned)store::depth());
     }
 
     // ---------------------------------------------------------- upkeep -----
@@ -173,7 +178,9 @@ void loop() {
     // Showing red while SMS still works would misreport the gate as dead.
     ui::setHealth(net::online() || smsq::ready(), store::depth(), clockw::ok());
 
-    // Idle screen: status symbol + queue count on top, time on bottom.
+    // Idle screen:
+    //   Line 1: status symbol at left, day at right, queue count only if > 0
+    //   Line 2: 12h time + date
     // Refreshed once a second so the clock doesn't look frozen — a gate scanner
     // sits unattended for hours, and "is this thing even on" should be
     // answerable at a glance.
@@ -181,16 +188,38 @@ void loop() {
     if (s_ready && now - s_lastTapAt > 3000 && now - s_lastLcd >= 1000) {
         s_lastLcd = now;
 
-        char line1[17];
-        snprintf(line1, sizeof line1, "%s Q:%u", statusSymbol(), (unsigned)store::depth());
+        static const char* dayNames[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
+        // Compute time/day first so line 1 can use the day name
         char line2[17];
+        const char* day = "  ";
         if (clockw::ok()) {
             uint32_t local = clockw::now() + (uint32_t)TZ_OFFSET_S;
-            int hh = (local % 86400) / 3600, mm = (local % 3600) / 60, ss = local % 60;
-            snprintf(line2, sizeof line2, "%02d:%02d:%02d", hh, mm, ss);
+            struct tm t;
+            gmtime_r((time_t*)&local, &t);
+            int h12 = t.tm_hour % 12;
+            if (h12 == 0) h12 = 12;
+            const char* ampm = t.tm_hour < 12 ? "AM" : "PM";
+            snprintf(line2, sizeof line2, "%2d:%02d%s %02d/%02d",
+                     h12, t.tm_min, ampm,
+                     t.tm_mon + 1, t.tm_mday);
+            day = dayNames[t.tm_wday];
         } else {
             snprintf(line2, sizeof line2, "No clock");
+        }
+
+        // Line 1: status + optional queue + day right-aligned to 16 chars
+        char line1[17];
+        unsigned q = (unsigned)store::depth();
+        const char* sym = statusSymbol();  // 2 chars: "ON","OF","AP","SM","!C"
+        if (q > 0) {
+            char mid[8];
+            snprintf(mid, sizeof mid, "Q:%u", q);
+            int pad = 16 - 2 - 1 - (int)strlen(mid) - 3;
+            if (pad < 1) pad = 1;
+            snprintf(line1, sizeof line1, "%s %s%*s%s", sym, mid, pad, "", day);
+        } else {
+            snprintf(line1, sizeof line1, "%s           %s", sym, day);
         }
 
         lcd::show(line1, line2);

@@ -8,8 +8,10 @@
 // The rule this file exists to enforce: a position is never drawn without its
 // source, its accuracy and its age. A 12 m GNSS fix and a 2 km cell estimate
 // are both "a pin" if you let them be.
-
-const sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+//
+// sb, $, secsAgo, ago and the sign-in/up wiring all live in common.js, shared
+// with attendance.js — this file only builds what is specific to the parent
+// view: the map, device cards, places, and SOS.
 
 const STALE_S = 15 * 60;
 const SOURCE = {
@@ -20,75 +22,16 @@ const SOURCE = {
   manual:     { label: "manual",             color: "#6d7b8b" },
 };
 
-const $ = (id) => document.getElementById(id);
 let map, markers = {}, fitted = false, activeSos = null, primaryDevice = null;
 let trailLine = null, trailDevice = null;
 let sosAudioCtx = null, sosBeepOsc = null, sosBeepInterval = null;
 
-const secsAgo = (iso) => Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-function ago(s) {
-  if (s == null) return "never";
-  if (s < 60) return `${s | 0}s ago`;
-  if (s < 3600) return `${(s / 60) | 0} min ago`;
-  if (s < 86400) return `${(s / 3600) | 0} hr ago`;
-  return `${(s / 86400) | 0} days ago`;
-}
-
-// ---------------------------------------------------------------- auth -----
-async function boot() {
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) { $("signin").hidden = false; return; }
-  $("signin").hidden = true;
+// ---------------------------------------------------------------- boot -----
+requireAuth(async () => {
   initMap();
   await refresh();
   subscribe();
   setInterval(refresh, 60000);   // realtime carries the news; this is a safety net
-}
-
-let signupMode = false;
-$("signin-toggle").addEventListener("click", () => {
-  signupMode = !signupMode;
-  $("signin-heading").textContent = signupMode ? "Create account" : "Tracker";
-  $("signin-submit").textContent = signupMode ? "Create account" : "Sign in";
-  $("signin-toggle").textContent = signupMode
-    ? "Already have an account? Sign in" : "Need an account? Create one";
-  $("password2").hidden = !signupMode;
-  $("password2").required = signupMode;
-  $("signin-error").textContent = "";
-  $("signin-note").hidden = true;
-});
-
-$("signin-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  $("signin-error").textContent = "";
-  $("signin-note").hidden = true;
-
-  if (signupMode) {
-    if ($("password").value !== $("password2").value) {
-      $("signin-error").textContent = "Passwords don't match.";
-      return;
-    }
-    const { data, error } = await sb.auth.signUp({
-      email: $("email").value, password: $("password").value,
-    });
-    if (error) { $("signin-error").textContent = error.message; return; }
-    // A fresh account has zero device_access rows, so RLS shows it nothing —
-    // creating an account grants no visibility into anyone's data by itself.
-    // The claim code (below, once signed in) is the only way that changes.
-    if (data.session) { location.reload(); return; }
-    $("signin-note").hidden = false;
-    $("signin-note").textContent = "Check your email to confirm the account, then sign in.";
-    return;
-  }
-
-  const { error } = await sb.auth.signInWithPassword({
-    email: $("email").value, password: $("password").value,
-  });
-  if (error) { $("signin-error").textContent = error.message; return; }
-  location.reload();
-});
-$("signout").addEventListener("click", async () => {
-  await sb.auth.signOut(); location.reload();
 });
 
 // ------------------------------------------------------------- pairing -----
@@ -175,9 +118,6 @@ async function refresh() {
   }
   renderDevices(enriched);
 
-  // Scanners
-  renderScanners(devices.filter(x => x.kind === "scanner"));
-
   // Attendance: last 200 taps for days view, last 8 for recent
   const { data: taps } = await sb.from("attendance")
     .select("card_uid,direction,recorded_at,cards(child_name)")
@@ -218,7 +158,7 @@ function renderDevices(list) {
         ? `<div class="warn">Battery ${d.battery_pct}% — charge tonight.</div>` : ""}
       <div style="display:flex; gap:6px; flex-wrap:wrap">
         <button data-locate="${d.id}">Locate now</button>
-        <button class="trail-btn" data-trail="${d.id}" onclick="toggleTrail('${d.id}', this)">Show trail</button>
+        <button class="trail-btn" data-trail="${d.id}" onclick="toggleTrail(\'${d.id}\', this)">Show trail</button>
       </div>`;
     box.appendChild(el);
     if (loc) draw(d);
@@ -456,23 +396,6 @@ async function toggleTrail(deviceId, btn) {
   map.fitBounds(trailLine.getBounds(), { padding: [40, 40] });
 }
 
-// ----------------------------------------------------------- scanners -----
-function renderScanners(list) {
-  const box = $("scanners");
-  if (!list.length) { box.innerHTML = '<p class="muted">No gate stations registered.</p>'; return; }
-  box.innerHTML = "";
-  list.forEach((s) => {
-    const age = s.last_seen_at ? secsAgo(s.last_seen_at) : null;
-    const online = age != null && age < 5 * 60;
-    const el = document.createElement("div");
-    el.className = "scanner";
-    el.innerHTML = `
-      <span class="sname">${s.name || s.id}</span>
-      <span class="sstatus ${online ? "on" : "off"}">${online ? "online" : ago(age) + (age != null ? "" : " — never seen")}</span>`;
-    box.appendChild(el);
-  });
-}
-
 // -------------------------------------------------- attendance days -----
 function renderAttendanceDays(taps) {
   const box = $("attendance-days");
@@ -518,5 +441,3 @@ function renderAttendanceDays(taps) {
     box.appendChild(el);
   });
 }
-
-boot();

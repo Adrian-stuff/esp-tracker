@@ -23,16 +23,15 @@
 // ---- Human interface -------------------------------------------------------
 #define PIN_SOS_BUTTON    33   // RTC-capable -> ext0 deep-sleep wake. Active LOW, pull-up.
 
-// Child-facing feedback. The vibration motor is out of stock; an LED and a
-// piezo stand in. Both are driven, because neither alone is adequate:
-//   LED   : series resistor to GND. Mount where the child can actually SEE it.
-//   PIEZO : passive buzzer via tone(). Audible cues reach a child who is not
-//           looking — but see FEEDBACK_SILENT_SOS in config.h before assuming
-//           louder is better.
-//   Motor : drops onto PIN_FEEDBACK later. MOSFET + flyback diode, never
-//           driven from the pin directly.
-#define PIN_FEEDBACK      13   // LED now, vibration motor later
-#define PIN_PIEZO         12   // passive piezo buzzer
+// Child-facing feedback — RGB LED (common anode, active LOW).
+// No piezo buzzer (GPIO 12 is a boot strapping pin — do NOT use).
+//   Common anode → 3.3V
+//   R : red leg — GPIO LOW to light
+//   G : green leg — GPIO LOW to light
+//   B : blue leg — GPIO LOW to light
+#define PIN_LED_R         13   // red leg
+#define PIN_LED_G         14   // green leg
+#define PIN_LED_B         15   // blue leg
 #define PIN_LED            2   // onboard, debug only — not the child-facing one
 
 // ---- Power sense -----------------------------------------------------------

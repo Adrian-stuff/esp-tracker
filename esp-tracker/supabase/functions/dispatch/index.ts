@@ -75,11 +75,15 @@ Deno.serve(async () => {
     let ok = true;
     for (const c of targets) {
       if (row.channel === "voice" || row.channel === "voice2") {
-        // TODO: Twilio voice + TTS. Costs real money — it is deliberately the
-        // last rung, and only reached when nobody has acknowledged in 3 minutes.
+        // Voice calls not yet configured — fall back to SMS with urgent prefix.
+        // This still reaches the parent; it just lacks the TTS voice.
+        const urgentText = `⚠ URGENT ${text}`;
+        const r = await sendSms(c.phone!, urgentText);
+        ok = ok && r.ok;
         await db.from("alerts").insert({
-          sos_event_id: sos.id, channel: "voice", recipient: c.phone!,
-          delivery_status: "not_implemented",
+          sos_event_id: sos.id, channel: row.channel, recipient: c.phone!,
+          provider_msg_id: r.msgId, delivery_status: r.ok ? "sent" : "failed",
+          error: r.ok ? undefined : r.error,
         });
         continue;
       }

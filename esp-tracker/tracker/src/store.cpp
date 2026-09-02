@@ -207,11 +207,11 @@ void drain() {
         } else {
             snprintf(sms, sizeof sms, "SOS from %s. Position unknown.", DEVICE_ID);
         }
-        sent = modem::sendSms(SOS_SMS_PRIMARY, sms);
+        sent = modem::sendSms(s_sosNumber, sms);
     } else if (ev.kind == EventKind::Telemetry && ev.payload_len > 0) {
         // Telemetry: payload is already "LOC <src>,<lat>,<lon>,<acc>,<epoch>,<code>"
         // Just send it directly
-        sent = modem::sendSms(SCANNER_SMS_NUMBER, ev.payload);
+        sent = modem::sendSms(s_scannerNumber, ev.payload);
     }
 
     if (sent) {

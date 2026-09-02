@@ -14,8 +14,10 @@ void begin() {
 
 void beginAcquire() {
     gps::power(true);
-    WiFi.scanNetworks(true /* async */, false);
-    // TODO: kick off BLE scan for known anchors, and AT+CENG for cell id
+    // WiFi scanning is handled by motion::tierWifi() — do NOT start a
+    // separate scan here; both fighting for the radio at the same time
+    // corrupts results. motion.cpp runs every 2-5 min and stores the raw
+    // BSSID/RSSI/SSID data that report.cpp sends as WIFISCAN SMS.
 }
 
 bool knownPlace(Fix& out) { (void)out; return false; }  // TODO: match BSSID set against registered places

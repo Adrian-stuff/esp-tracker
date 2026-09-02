@@ -11,11 +11,15 @@ Card format: scanner-uno/src/card.h. Whatever this writes must decode
 correctly on the scanner, or the offline-SMS fallback silently does
 nothing when the network is down — the one case it exists for.
 
+After a successful write, the card is also registered in Supabase so
+the dashboard and roster endpoint know about it immediately.
+
 Setup:
-    pip install pyserial
+    pip install pyserial requests
     python3 card_writer_gui.py
 """
 
+import json
 import queue
 import re
 import threading
@@ -25,8 +29,87 @@ from tkinter import ttk, messagebox
 import serial
 import serial.tools.list_ports
 
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+
 BAUD = 9600
 CARD_WAIT_HINT_S = 5   # matches CARD_WAIT_MS in the Arduino sketch
+
+# ──────────────────────────────────────────────────────────── Supabase ────
+
+def _supabase_headers(api_key: str):
+    return {
+        "apikey": api_key,
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+def supabase_insert_card(url: str, api_key: str, card_uid: str,
+                         child_name: str, device_id: str = "",
+                         student_id: str = "", phone: str = ""):
+    """Insert a card into Supabase cards table. Returns (ok, error_msg)."""
+    if not url or not api_key:
+        return False, "Supabase URL or key not configured"
+    if not HAS_REQUESTS:
+        return False, "requests library not installed (pip install requests)"
+
+    payload = {
+        "card_uid": card_uid,
+        "child_name": child_name,
+        "active": True,
+    }
+    if device_id:
+        payload["device_id"] = device_id
+
+    # Store student_id and phone in child_name suffix for now,
+    # or as metadata if the table has those columns.
+    # The cards table schema: card_uid PK, device_id, child_name, active.
+    # We append student_id/phone to child_name so the roster still works.
+    extra = []
+    if student_id:
+        extra.append(f"ID:{student_id}")
+    if phone:
+        extra.append(f"PH:{phone}")
+    if extra:
+        payload["child_name"] = f"{child_name} ({', '.join(extra)})"
+
+    resp = requests.post(
+        f"{url.rstrip('/')}/rest/v1/cards",
+        headers=_supabase_headers(api_key),
+        json=payload,
+        params={"on_conflict": "card_uid"},
+        timeout=10,
+    )
+    if resp.status_code in (200, 201):
+        return True, None
+    try:
+        err = resp.json()
+        msg = err.get("message", err.get("hint", resp.text[:200]))
+    except Exception:
+        msg = resp.text[:200]
+    return False, f"HTTP {resp.status_code}: {msg}"
+
+def supabase_test_connection(url: str, api_key: str):
+    """Quick sanity check — returns (ok, error_msg)."""
+    if not url or not api_key:
+        return False, "URL or key empty"
+    if not HAS_REQUESTS:
+        return False, "requests not installed"
+    try:
+        resp = requests.get(
+            f"{url.rstrip('/')}/rest/v1/cards?select=card_uid&limit=1",
+            headers=_supabase_headers(api_key),
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return True, None
+        return False, f"HTTP {resp.status_code}"
+    except requests.RequestException as e:
+        return False, str(e)
 
 
 def normalize_ph_phone(raw: str):
@@ -123,11 +206,12 @@ ERROR_HINTS = {
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("RFID Card Writer — Attendance Offline Fallback")
-        self.geometry("480x520")
+        self.title("RFID Card Writer — Child Tracker Enrollment")
+        self.geometry("540x680")
         self.link = WriterLink()
 
         self._build_connection_row()
+        self._build_supabase_row()
         self._build_form()
         self._build_actions()
         self._build_log()
@@ -151,6 +235,31 @@ class App(tk.Tk):
 
         self.conn_status = ttk.Label(row, text="not connected", foreground="#a00")
         self.conn_status.pack(side="left", padx=8)
+
+    def _build_supabase_row(self):
+        frame = ttk.LabelFrame(self, text="Supabase (auto-registers cards after write)", padding=8)
+        frame.pack(fill="x", padx=8, pady=4)
+
+        ttk.Label(frame, text="Project URL:").grid(row=0, column=0, sticky="w", pady=2)
+        self.sb_url_var = tk.StringVar(value="https://nvdumsbxspevpvligzlw.supabase.co")
+        ttk.Entry(frame, textvariable=self.sb_url_var, width=44).grid(row=0, column=1, sticky="w", columnspan=2)
+
+        ttk.Label(frame, text="Anon key:").grid(row=1, column=0, sticky="w", pady=2)
+        self.sb_key_var = tk.StringVar(value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52ZHVtc2J4c3BldnB2bGlnemx3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwOTUyNzgsImV4cCI6MjEwMzY3MTI3OH0.ejA8q5f5z4rKx-GAwC-c3fO9jDE3MhXnIh-A32vUhtA")
+        ttk.Entry(frame, textvariable=self.sb_key_var, width=44, show="*").grid(row=1, column=1, sticky="w", columnspan=2)
+
+        ttk.Label(frame, text="Tracker device_id:").grid(row=2, column=0, sticky="w", pady=2)
+        self.sb_device_var = tk.StringVar(value="tracker-01")
+        ttk.Entry(frame, textvariable=self.sb_device_var, width=20).grid(row=2, column=1, sticky="w")
+
+        self.sb_test_btn = ttk.Button(frame, text="Test", command=self._test_supabase)
+        self.sb_test_btn.grid(row=2, column=2, padx=6)
+        self.sb_status = ttk.Label(frame, text="", foreground="#666")
+        self.sb_status.grid(row=3, column=0, columnspan=3, sticky="w")
+
+        self.sb_upload_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text="Also register card in Supabase after write",
+                        variable=self.sb_upload_var).grid(row=4, column=0, columnspan=3, sticky="w", pady=(4,0))
 
     def _build_form(self):
         frame = ttk.LabelFrame(self, text="Card details", padding=10)
@@ -228,6 +337,15 @@ class App(tk.Tk):
         self.read_btn.configure(state="normal")
         self._log(f"Connected to {port}.")
 
+    def _test_supabase(self):
+        self.sb_status.configure(text="testing...", foreground="#666")
+        self.update_idletasks()
+        ok, err = supabase_test_connection(self.sb_url_var.get(), self.sb_key_var.get())
+        if ok:
+            self.sb_status.configure(text="connected", foreground="#080")
+        else:
+            self.sb_status.configure(text=f"failed: {err}", foreground="#a00")
+
     def _clear_fields(self):
         self.phone_var.set("")
         self.id_var.set("")
@@ -274,7 +392,35 @@ class App(tk.Tk):
         self._log(f"< {resp}")
         if resp.startswith("OK:"):
             uid = resp[3:]
-            messagebox.showinfo("Card written", f"Success. Card UID: {uid}")
+            self._log(f"Card UID: {uid}")
+
+            # Upload to Supabase if enabled
+            if self.sb_upload_var.get() and uid:
+                name = self.name_var.get().strip()
+                phone = normalize_ph_phone(self.phone_var.get()) or self.phone_var.get().strip()
+                student_id = self.id_var.get().strip()
+                device_id = self.sb_device_var.get().strip()
+
+                self._log(f"Registering in Supabase...")
+                ok, err = supabase_insert_card(
+                    self.sb_url_var.get(), self.sb_key_var.get(),
+                    uid, name, device_id, student_id, phone,
+                )
+                if ok:
+                    self._log(f"Supabase: registered card {uid} -> {name}")
+                    messagebox.showinfo("Card written",
+                        f"Success.\n\nCard UID: {uid}\n"
+                        f"Name: {name}\n"
+                        f"Registered in Supabase.")
+                else:
+                    self._log(f"Supabase error: {err}")
+                    messagebox.showwarning("Card written (Supabase failed)",
+                        f"Card written successfully.\n\nUID: {uid}\n"
+                        f"Supabase registration failed:\n{err}\n\n"
+                        f"You can register manually in the dashboard.")
+            else:
+                messagebox.showinfo("Card written", f"Success. Card UID: {uid}")
+
         elif resp.startswith("ERR:"):
             code = resp[4:]
             messagebox.showerror("Write failed", ERROR_HINTS.get(code, code))

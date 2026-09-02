@@ -42,6 +42,7 @@ enum class Cue : uint8_t {
 
 namespace feedback {
     void begin();
+    void ledTest();             // flash R, G, B at boot to verify wiring
     void service();          // non-blocking; call every loop()
     void play(Cue c);        // higher-priority cues pre-empt lower ones
     void clear();

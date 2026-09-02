@@ -27,13 +27,15 @@ static const Step P_LOWBATT[]   = {{60,0}};                         // single ti
 struct Pattern { const Step* steps; uint8_t n; uint32_t hold_ms; };
 
 // hold_ms = 0 means "run the steps once". Non-zero repeats until elapsed.
+// Indexed directly by (uint8_t)Cue — MUST stay in the same order as the
+// enum in feedback.h, including the LowBattery-right-after-None placement.
 static const Pattern PATTERNS[] = {
-    {nullptr,     0, 0},
-    {P_ARMED,     3, 0},
-    {P_CANCELLED, 1, 0},
-    {P_SENT,      1, 0},
-    {P_ACKED,     2, FEEDBACK_ACK_HOLD_MS},
-    {P_LOWBATT,   1, 0},
+    {nullptr,     0, 0},                      // None
+    {P_LOWBATT,   1, 0},                      // LowBattery
+    {P_ARMED,     3, 0},                      // Armed
+    {P_CANCELLED, 1, 0},                      // Cancelled
+    {P_SENT,      1, 0},                      // Sent
+    {P_ACKED,     2, FEEDBACK_ACK_HOLD_MS},   // Acked
 };
 
 static Cue      s_cue     = Cue::None;

@@ -60,7 +60,7 @@ See [pins.h](include/pins.h) for the authoritative list. Summary:
 | SOS button | 33 | RTC-capable → wakes from deep sleep. Active low |
 | Child-facing feedback | 13 | LED + series resistor now; motor + MOSFET + flyback later |
 | Debug LED | 2 | Onboard — *not* the child-facing one |
-| Battery sense | 34 | **ADC1 only** — ADC2 is unusable while Wi-Fi is on |
+| Battery sense | 34 | **Reserved, not populated** — no divider is fitted on current hardware; battery is a software uptime estimate (see `battery.cpp`), not an ADC reading. Ratio/pin kept here for a future board revision. |
 
 Two ESP32 traps encoded above: **ADC2 pins cannot be read while Wi-Fi is active**, so battery
 sense must live on GPIO 32–39. And **deep-sleep wake needs an RTC GPIO**, which is why the

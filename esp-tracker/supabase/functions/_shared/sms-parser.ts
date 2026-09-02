@@ -11,8 +11,12 @@ const SOURCE_CODES: Record<string, string> = {
   g: "gnss", w: "wifi", b: "ble_anchor", c: "cell",
 };
 
+// Battery percent is OPTIONAL in the regex: a device on firmware from
+// before battery_pct was added to the wire format still sends the 5-field
+// form and must keep parsing after this deploys, ahead of every tracker in
+// the field getting reflashed. New firmware always sends the 6-field form.
 const LOC_RE =
-  /^LOC ([gwbc]),(-?\d+\.\d+),(-?\d+\.\d+),(\d+(?:\.\d+)?),(\d+),([0-9a-f]{8})$/;
+  /^LOC ([gwbc]),(-?\d+\.\d+),(-?\d+\.\d+),(\d+(?:\.\d+)?),(\d+)(?:,(\d{1,3}))?,([0-9a-f]{8})$/;
 
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest(
@@ -34,6 +38,9 @@ export interface LocParse {
   lon: number;
   accuracy_m: number;
   recorded_at: number;
+  // undefined for the older 5-field wire format (a device not yet
+  // reflashed past the battery_pct addition).
+  battery_pct?: number;
 }
 
 export interface WifiAp {
@@ -59,8 +66,12 @@ export async function parseLoc(
   const m = LOC_RE.exec(text);
   if (!m) return null;
 
-  const [, src, latS, lonS, accS, epochS, hexCode] = m;
-  const payload = `${src},${latS},${lonS},${accS},${epochS}`;
+  const [, src, latS, lonS, accS, epochS, battS, hexCode] = m;
+  // The hash covers exactly the fields the device actually sent — the
+  // payload string must match byte-for-byte what report.cpp hashed, so
+  // battery's presence/absence changes which payload we reconstruct here.
+  let payload = `${src},${latS},${lonS},${accS},${epochS}`;
+  if (battS !== undefined) payload += `,${battS}`;
 
   if ((await code(secret, payload)) !== hexCode) return null;
 
@@ -70,6 +81,7 @@ export async function parseLoc(
     lon: parseFloat(lonS),
     accuracy_m: parseFloat(accS),
     recorded_at: parseInt(epochS, 10),
+    battery_pct: battS !== undefined ? parseInt(battS, 10) : undefined,
   };
 }
 

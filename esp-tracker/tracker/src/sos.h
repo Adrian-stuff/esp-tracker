@@ -14,6 +14,16 @@ namespace sos {
 
     bool active();
 
+    // True when sos.cpp is NOT in the middle of its own immediate 2-step
+    // send (parent, then scanner) for the current trigger — i.e. idle
+    // (nothing queued yet) or done trying (success or failure either way).
+    // main.cpp uses this to hold off calling store::drain() while a send is
+    // in flight: both this module and store::drain() can send the same
+    // queued SOS to the scanner, and without this guard drain() can win the
+    // race and send it before sos.cpp's own "try immediately" attempt ever
+    // gets a chance to run, defeating the point of trying immediately first.
+    bool smsIdle();
+
     // Fires on the 2s hold. Starts parallel acquisition, then transmits at
     // SOS_TX_DEADLINE_MS with whatever fix exists — see config.h.
     void trigger();
@@ -21,6 +31,12 @@ namespace sos {
     // Second long-hold inside SOS_CANCEL_WINDOW_MS aborts an accidental press.
     void cancel();
 
-    // Called on HTTP 200 for the event id — not when the request is sent.
+    // Fires on real end-to-end confirmation for the event id — not merely
+    // "the request was sent" — and is the only thing that plays Cue::Acked
+    // ("your parent has been told"). Called from main.cpp's
+    // modem::pollSmsCommand onAck callback, for an inbound
+    // "<SMS_CMD_SECRET> ACK <id>" SMS relayed via the scanner's outbox
+    // relay after relay-sms confirms this SOS reached the server — see
+    // store.h's file header for the full round-trip.
     void onServerAck(const char* event_id);
 }

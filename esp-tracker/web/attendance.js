@@ -29,10 +29,18 @@ async function refresh() {
   }
   renderScanners(enriched);
 
-  const { data: taps } = await sb.from("attendance")
-    .select("card_uid,direction,recorded_at,cards(child_name)")
-    .order("recorded_at", { ascending: false }).limit(200);
-  const allTaps = taps ?? [];
+  const [{ data: taps }, { data: cards }] = await Promise.all([
+    sb.from("attendance")
+      .select("card_uid,direction,recorded_at")
+      .order("recorded_at", { ascending: false }).limit(200),
+    sb.from("cards").select("card_uid,child_name"),
+  ]);
+  const cardMap = Object.fromEntries((cards ?? []).map((c) => [c.card_uid, c.child_name]));
+  const allTaps = (taps ?? []).map((t) => ({
+    ...t,
+    child_name: cardMap[t.card_uid] || t.card_uid,
+    cards: { child_name: cardMap[t.card_uid] || t.card_uid },
+  }));
   renderAttendance(allTaps.slice(0, 8));
   renderAttendanceDays(allTaps);
 }

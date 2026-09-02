@@ -195,7 +195,7 @@ async def relay_sms(body: RelayedSms, device=Depends(auth.current_device)):
     # Try LOC format first
     parsed = tracker_sms.parse(body.text)
     if parsed:
-        source, lat, lon, acc, recorded_at = parsed
+        source, lat, lon, acc, recorded_at, battery_pct = parsed
 
         tracker = db.one("SELECT id FROM devices WHERE msisdn=? AND kind='tracker' AND active=1",
                          (body.sender,))
@@ -212,10 +212,15 @@ async def relay_sms(body: RelayedSms, device=Depends(auth.current_device)):
         except sqlite3.IntegrityError:
             return {"ok": True, "handled": True, "duplicate": True}
 
-        db.execute("UPDATE devices SET last_seen_at=? WHERE id=?", (received_at, tracker["id"]))
+        if battery_pct is not None:
+            db.execute("UPDATE devices SET last_seen_at=?, battery_pct=? WHERE id=?",
+                       (received_at, battery_pct, tracker["id"]))
+        else:
+            db.execute("UPDATE devices SET last_seen_at=? WHERE id=?", (received_at, tracker["id"]))
         await hub.broadcast("location", {
             "device_id": tracker["id"], "lat": lat, "lon": lon,
-            "accuracy_m": acc, "source": source, "recorded_at": recorded_at})
+            "accuracy_m": acc, "source": source, "recorded_at": recorded_at,
+            "battery_pct": battery_pct})
         return {"ok": True, "handled": True}
 
     # Try WIFISCAN format

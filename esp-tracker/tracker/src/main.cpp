@@ -3,6 +3,7 @@
 #include <time.h>
 #include <NimBLEDevice.h>
 #include <Preferences.h>
+#include "esp_system.h"   // esp_reset_reason() — crash-loop backoff, see setup()
 #include "../include/pins.h"
 #include "../include/config.h"
 #include "modem.h"
@@ -15,6 +16,7 @@
 #include "notify.h"
 #include "report.h"
 #include "wifi_setup.h"
+#include "battery.h"
 
 // Persistent storage for BLE-configurable values
 static Preferences s_prefs;
@@ -103,7 +105,12 @@ static BleServerCallbacks s_bleCbs;
 
 // Parse and execute BLE commands
 static void processBleCommand(const char* cmd) {
-    char buf[128];
+    // 256, not 128: STATUS now includes modem::lastError() detail (up to 80
+    // chars) alongside everything else, and 128 was already tight before
+    // that addition. Matches the TX characteristic's own declared capacity
+    // (FFF1, created with 256 below) — no benefit to a local buffer bigger
+    // than what can actually go out over the wire.
+    char buf[256];
     snprintf(buf, sizeof buf, "[BLE] cmd: %s\n", cmd);
     Serial.print(buf);
 
@@ -127,8 +134,66 @@ static void processBleCommand(const char* cmd) {
         int8_t csq = modem::signalQuality();
         int8_t creg = modem::networkStatus();
         snprintf(buf, sizeof buf,
-            "SOS: %s\nScanner: %s\nCSQ: %d\nCREG: %d\n",
-            s_sosNumber, s_scannerNumber, csq, creg);
+            "SOS: %s\nScanner: %s\nCSQ: %d\nCREG: %d\nBatt: %u%% (%lumV)\nModem: %s%s%s\n",
+            s_sosNumber, s_scannerNumber, csq, creg,
+            (unsigned)battery::pct(), (unsigned long)battery::milliVolts(),
+            modem::blackout() ? "BLACKOUT SUSPECTED" : "ok",
+            modem::lastError()[0] ? ", last error: " : "", modem::lastError());
+    } else if (strcmp(cmd, "GPS") == 0) {
+        // Diagnostic, not a fix request. Indoors a real fix will never
+        // arrive — see gps.h's GnssDiag comment — so this reports whether
+        // the NEO-6M is actually alive and talking (valid NMEA sentences
+        // parsed) rather than waiting for coordinates that can't happen at
+        // a desk. Blocks for GPS_TEST_MS to give the module time to say
+        // something — same accepted tradeoff as the WIFI command blocking
+        // far longer (5 min) for its own portal.
+        static constexpr uint32_t GPS_TEST_MS = 5000;
+        bool wasActive = sos::active();  // don't fight an in-progress SOS's own acquisition
+        Serial.println("[BLE] GPS test requested — powering on NEO-6M, listening 5s...");
+        gps::power(true);
+        uint32_t start = millis();
+        while (millis() - start < GPS_TEST_MS) {
+            gps::service();
+            delay(10);
+        }
+        GnssDiag d = gps::diagnostics();
+        if (!wasActive) gps::power(false);  // back to the normal power-gated state
+
+        bool alive = d.passedChecksum > 0;
+        char sats[8], hdop[12];
+        snprintf(sats, sizeof sats, d.satellitesValid ? "%u" : "?", d.satellites);
+        if (d.hdopValid) snprintf(hdop, sizeof hdop, "%.1f", d.hdop); else snprintf(hdop, sizeof hdop, "?");
+
+        snprintf(buf, sizeof buf,
+            "GPS: %s\nChars:%lu OK:%lu Bad:%lu\nSats used:%s HDOP:%s\nFix:%s\n%s",
+            alive ? "MODULE ALIVE (valid NMEA received)" : "NO VALID DATA — check wiring/EN pin/power",
+            (unsigned long)d.charsProcessed, (unsigned long)d.passedChecksum, (unsigned long)d.failedChecksum,
+            sats, hdop, d.hasFix ? "YES" : "no (normal indoors)",
+            (!alive && d.charsProcessed == 0) ? "Nothing on the UART at all — check PIN_GPS_EN/wiring.\n" :
+            (!alive) ? "Bytes arriving but none valid — check baud (9600) and RX/TX not swapped.\n" : "");
+    } else if (strncmp(cmd, "SEND ", 5) == 0) {
+        // Manual SMS test — sends exactly what you type, right now, and
+        // reports the real modem result. Useful for checking the SIM800L
+        // end-to-end (signal, credit, wiring) without waiting for a
+        // scheduled report or physically triggering an SOS.
+        const char* rest = cmd + 5;
+        const char* sp = strchr(rest, ' ');
+        if (!sp || sp == rest || !*(sp + 1)) {
+            snprintf(buf, sizeof buf, "Usage: SEND <number> <message>\n");
+        } else {
+            char num[20];
+            size_t numLen = sp - rest;
+            if (numLen >= sizeof num) numLen = sizeof num - 1;
+            memcpy(num, rest, numLen); num[numLen] = '\0';
+            const char* msg = sp + 1;
+            Serial.printf("[BLE] SEND requested: to=%s body=\"%s\"\n", num, msg);
+            bool ok = modem::sendSms(num, msg);
+            if (ok) {
+                snprintf(buf, sizeof buf, "Sent OK\n");
+            } else {
+                snprintf(buf, sizeof buf, "Send FAILED: %s\n", modem::lastError());
+            }
+        }
     } else if (strcmp(cmd, "WIFI") == 0) {
         snprintf(buf, sizeof buf, "Entering WiFi config mode...\n");
         bleBufAppend(buf, strlen(buf));
@@ -141,6 +206,8 @@ static void processBleCommand(const char* cmd) {
             "Commands:\n"
             "  SOS +639XXXXXXXXX    - set SOS number\n"
             "  SCANNER +639XXXXXXXXX - set scanner number\n"
+            "  SEND +639XXXXXXXXX <msg> - send a test SMS right now\n"
+            "  GPS                  - test the GNSS module (5s, works indoors)\n"
             "  STATUS               - show current config\n"
             "  WIFI                 - enter WiFi config mode\n"
             "  HELP                 - this help\n");
@@ -154,6 +221,20 @@ static void processBleCommand(const char* cmd) {
     Serial.print(buf);
 }
 
+// Handoff buffer: BleRxCallback::onWrite() below runs on NimBLE's own host
+// task, NOT the Arduino main loop task. modem.cpp and gps.cpp keep
+// unsynchronized static state (the AT-command UART exchange, TinyGPSPlus's
+// character-by-character parser) that the main loop ALSO touches every
+// iteration — routine reports, SOS sends, motion scans. Running a command
+// straight from onWrite() would let two FreeRTOS tasks read/write that same
+// state at once (e.g. a SEND/GPS/STATUS command colliding with an in-flight
+// SOS send or GPS parse), corrupting whichever was mid-exchange. Queuing the
+// command here and running it from loop() instead keeps every touch of that
+// state on the one task that already owns it everywhere else in this
+// firmware — no mutex needed, just "only one task ever calls this".
+static volatile bool s_blePending = false;
+static char          s_bleCmdBuf[128];
+
 // BLE RX callback — receives commands from phone
 class BleRxCallback : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* p) override {
@@ -165,7 +246,18 @@ class BleRxCallback : public NimBLECharacteristicCallbacks {
             cmd[sizeof(cmd) - 1] = '\0';
             size_t len = strlen(cmd);
             while (len > 0 && (cmd[len-1] == '\n' || cmd[len-1] == '\r')) cmd[--len] = '\0';
-            if (len > 0) processBleCommand(cmd);
+            if (len > 0) {
+                // A command still mid-processing when another arrives is
+                // dropped rather than queued — acceptable for a low-frequency
+                // manual debug interface, and simpler than a real queue.
+                if (!s_blePending) {
+                    strncpy(s_bleCmdBuf, cmd, sizeof(s_bleCmdBuf) - 1);
+                    s_bleCmdBuf[sizeof(s_bleCmdBuf) - 1] = '\0';
+                    s_blePending = true;
+                } else {
+                    Serial.println("[BLE] command dropped — previous one still processing");
+                }
+            }
         }
     }
 };
@@ -253,92 +345,208 @@ static void sendTestSms() {
     }
 }
 
-// Battery estimation from uptime (no ADC hardware).
-// Assumes a 2500mAh LiPo with average ~5mA draw (CSCLK sleep + periodic scans).
-// This is a rough estimate — real battery life depends heavily on usage patterns.
-// Reset the counter when the device is known to be freshly charged.
-static uint32_t s_bootMs = 0;
-static constexpr float BATTERY_CAPACITY_MAH = 2500.0f;
-static constexpr float AVG_DRAW_MA = 5.0f;      // conservative estimate
-static constexpr float BATTERY_WARN_PCT = 20.0f;
-static constexpr float BATTERY_CRIT_PCT = 10.0f;
+// Real battery reading — see battery.h/.cpp. Replaces a former uptime-based
+// guess that never touched PIN_VBAT_SENSE despite pins.h defining it with a
+// real divider ratio. Thresholds are config.h's LOWBATT_ALERT_PCT/
+// LOWBATT_CRIT_PCT, not a second set of constants duplicated here.
 static bool s_batteryWarned = false;
-static bool s_batteryCrit = false;
-
-static uint8_t estimateBatteryPct() {
-    uint32_t hoursUp = (millis() - s_bootMs) / 3600000UL;
-    float used_mAh = hoursUp * AVG_DRAW_MA;
-    float pct = 100.0f * (1.0f - used_mAh / BATTERY_CAPACITY_MAH);
-    if (pct < 0.0f) pct = 0.0f;
-    if (pct > 100.0f) pct = 100.0f;
-    return (uint8_t)pct;
-}
+static bool s_batteryCrit   = false;
 
 static void checkBattery() {
-    uint8_t pct = estimateBatteryPct();
-    if (pct <= BATTERY_CRIT_PCT && !s_batteryCrit) {
+    uint8_t pct = battery::pct();
+    Serial.printf("[battery] periodic check: %u%%\n", pct);
+    if (pct <= LOWBATT_CRIT_PCT && !s_batteryCrit) {
         s_batteryCrit = true;
+        Serial.printf("[battery] CRITICAL (<=%u%%) — notifying parent\n", (unsigned)LOWBATT_CRIT_PCT);
         notify::fire(Event::BatteryCritical, nullptr);
         feedback::play(Cue::LowBattery);
-    } else if (pct <= BATTERY_WARN_PCT && !s_batteryWarned) {
+    } else if (pct <= LOWBATT_ALERT_PCT && !s_batteryWarned) {
         s_batteryWarned = true;
+        Serial.printf("[battery] LOW (<=%u%%) — notifying parent\n", (unsigned)LOWBATT_ALERT_PCT);
         notify::fire(Event::BatteryLow, nullptr);
         feedback::play(Cue::LowBattery);
     }
-}
-
-static uint32_t s_buttonDownAt = 0;
-
-static void serviceButton() {
-    bool down = (digitalRead(PIN_SOS_BUTTON) == LOW);
-
-    if (down && s_buttonDownAt == 0) {
-        s_buttonDownAt = millis();
-    } else if (!down) {
-        s_buttonDownAt = 0;
-    } else if (sos::active() && millis() - s_buttonDownAt >= SOS_HOLD_MS) {
-        // Second 2s hold during the cancel window aborts an accidental press.
-        sos::cancel();
-        s_buttonDownAt = 0;
-    } else if (!sos::active() && millis() - s_buttonDownAt >= SOS_HOLD_MS) {
-        // First 2s hold, never a tap: pocket false alarms train parents to ignore it.
-        sos::trigger();
-        s_buttonDownAt = 0;
+    // Recovery: a recharge should re-arm both alerts rather than staying
+    // permanently latched from before the swap.
+    if (pct > LOWBATT_ALERT_PCT && (s_batteryWarned || s_batteryCrit)) {
+        Serial.println("[battery] recovered above alert threshold — re-arming alerts");
+        s_batteryWarned = false; s_batteryCrit = false;
     }
 }
 
+// Interrupt-driven edge capture — NOT a plain digitalRead() poll anymore.
+//
+// CONFIRMED REAL PROBLEM this exists to fix: loop() can legitimately block
+// for many seconds at a stretch (a store::drain() retry attempting to wake
+// an unresponsive modem, before the blackout fast-fail above existed —
+// and even with it, an occasional long block is still possible). A plain
+// poll only ever sees digitalRead() at the instant it happens to run; if
+// an ENTIRE press-and-release cycle occurs while loop() is stuck
+// elsewhere, the button is never sampled during it at all and the press
+// is silently lost — no amount of increasing SOS_HOLD_MS's timeout logic
+// fixes that, because the poll never runs to see it.
+//
+// An interrupt fires on every edge regardless of what loop() is doing, so
+// the press and release instants are captured precisely no matter how
+// busy the main loop is. serviceButton() below then reconstructs "was
+// there a qualifying hold" from those captured timestamps — including
+// retroactively, if the hold and release both already happened before
+// loop() got back around to checking.
+static volatile uint32_t s_isrPressAt   = 0;
+static volatile uint32_t s_isrReleaseAt = 0;
+static volatile bool     s_isrIsDown    = false;
+
+static void IRAM_ATTR onSosButtonEdge() {
+    uint32_t now = millis();
+    if (digitalRead(PIN_SOS_BUTTON) == LOW) {
+        s_isrPressAt = now;
+        s_isrIsDown  = true;
+    } else {
+        s_isrReleaseAt = now;
+        s_isrIsDown    = false;
+    }
+}
+
+static uint32_t s_lastHandledPressAt = 0;   // pressAt value already acted on (fired or ruled a tap)
+
+static void serviceButton() {
+    // 32-bit-aligned volatile reads are atomic on the ESP32 (Xtensa) —
+    // no critical section needed for a consistent snapshot of these three.
+    uint32_t pressAt   = s_isrPressAt;
+    uint32_t releaseAt = s_isrReleaseAt;
+    bool     isDown    = s_isrIsDown;
+
+    if (pressAt == s_lastHandledPressAt) return;   // nothing new since the last press we acted on
+
+    uint32_t heldFor = isDown ? (millis() - pressAt) : (releaseAt - pressAt);
+
+    if (heldFor >= SOS_HOLD_MS) {
+        s_lastHandledPressAt = pressAt;   // don't re-fire for the same physical press
+        if (sos::active()) {
+            // Second 2s hold during the cancel window aborts an accidental press.
+            sos::cancel();
+        } else {
+            // First 2s hold, never a tap: pocket false alarms train parents to ignore it.
+            sos::trigger();
+        }
+    } else if (!isDown) {
+        // Released before reaching the hold threshold — a tap, not a hold.
+        // Mark handled so we don't keep re-evaluating this same press.
+        s_lastHandledPressAt = pressAt;
+    }
+    // else: still down, not held long enough YET — leave s_lastHandledPressAt
+    // alone so the next serviceButton() call re-checks with a fresher millis().
+}
+
+// Survives any reset that isn't a full power loss (brownout, SW restart,
+// watchdog, panic) — RTC memory, not regular RAM. Counts consecutive
+// non-POWERON boots so a crash loop (e.g. the BMS brownout this file's
+// other comments reference, repeatedly tripping right after each retry)
+// gets a growing recovery delay before the next modem probe, instead of
+// hammering a supply that hasn't recovered from the last attempt yet.
+// Resets to 0 on a genuine cold power-on or once modem::begin() succeeds.
+RTC_DATA_ATTR static uint8_t s_crashLoopCount = 0;
+static constexpr uint8_t  CRASH_LOOP_MAX_COUNTED = 10;   // cap the backoff growth
+static constexpr uint32_t CRASH_LOOP_DELAY_STEP_MS = 500;
+
 void setup() {
     Serial.begin(115200);
+    delay(200);  // let the USB-serial bridge settle before the first print
+    Serial.println("\n[boot] tracker starting — " DEVICE_ID);
+
+    esp_reset_reason_t resetReason = esp_reset_reason();
+    if (resetReason == ESP_RST_POWERON) {
+        s_crashLoopCount = 0;
+    } else if (s_crashLoopCount < CRASH_LOOP_MAX_COUNTED) {
+        s_crashLoopCount++;
+    }
+    if (s_crashLoopCount > 0) {
+        uint32_t extraDelay = (uint32_t)s_crashLoopCount * CRASH_LOOP_DELAY_STEP_MS;
+        Serial.printf("[boot] non-poweron restart #%u in a row — giving the supply %lums extra "
+                      "to recover before touching the modem\n",
+                      s_crashLoopCount, (unsigned long)extraDelay);
+        delay(extraDelay);
+    }
 
     // WiFi config mode: hold SOS button during power-on to enter captive portal.
-    // Must run before any WiFi/NimBLE init.
+    // Must run before any WiFi/NimBLE init. buttonHeldAtBoot() itself checks
+    // the reset reason again (see its own comment) — a brownout mid-SOS
+    // must never boot into a 5-minute WiFi portal with the button dead.
     if (wifi_setup::buttonHeldAtBoot()) {
+        Serial.println("[boot] SOS button held at power-on — entering WiFi config portal");
         wifi_setup::enter();  // blocks for ~5 min, then reboots
     }
 
     loadNumbers();
+    Serial.printf("[boot] SOS number: %s, scanner number: %s\n", s_sosNumber, s_scannerNumber);
     bleInit();
-    s_bootMs = millis();
+    battery::begin();
 
     store::begin();
+    Serial.printf("[boot] store queue depth on boot: %u (survived from before reset, if any)\n", (unsigned)store::depth());
     sos::begin();
+    // Interrupt-driven, not polled — see serviceButton()'s own comment for
+    // why: a plain poll can miss an entire press-and-release cycle if
+    // loop() is blocked elsewhere when it happens. CHANGE fires on both
+    // press and release; onSosButtonEdge() itself just timestamps the edge
+    // and returns, all the actual logic stays in serviceButton() on the
+    // main loop, not the ISR.
+    attachInterrupt(digitalPinToInterrupt(PIN_SOS_BUTTON), onSosButtonEdge, CHANGE);
     gps::begin();
     locator::begin();
     motion::begin();
     notify::begin();
-    modem::begin();
+    bool modemOk = modem::begin();
+    if (!modemOk) {
+        Serial.println("[boot] *** MODEM INIT FAILED — SOS/reporting will not work until this recovers ***");
+    } else if (s_crashLoopCount > 0) {
+        Serial.printf("[boot] modem responded — crash loop broken after %u restart(s)\n", s_crashLoopCount);
+        s_crashLoopCount = 0;
+    }
     report::begin();
 
     // LED test: flash each color for 1 second at boot
     feedback::begin();
     feedback::ledTest();
 
-    modem::syncClockFromNetwork();
+    if (modemOk && modem::syncClockFromNetwork()) {
+        Serial.println("[boot] clock synced from network");
+    } else {
+        Serial.println("[boot] clock sync failed — timestamps will be wrong until this succeeds");
+    }
+    // From here on the radio idles at CFUN=4 — see config.h's
+    // MODEM_CFUN_IDLE_ENABLED block (LiPo BMS brownout mitigation).
+    // sendSms() wakes it again on its own whenever something needs sending.
+    if (modemOk) modem::enterIdle();
+    Serial.println("[boot] setup complete, entering main loop");
 }
 
 // Periodic battery check interval (every 30 minutes)
 static uint32_t s_lastBatteryCheck = 0;
 static constexpr uint32_t BATTERY_CHECK_INTERVAL_MS = 30UL * 60UL * 1000UL;
+
+// USB-serial command console — the same commands as BLE (SEND, STATUS, SOS,
+// SCANNER, WIFI, HELP), for testing from a wired connection when there's no
+// BLE client handy. Accumulates a line, then hands it to the exact same
+// processBleCommand() the BLE RX characteristic uses — one command parser,
+// two input paths. Replies go to Serial either way (processBleCommand
+// already does that), so nothing extra is needed to see the result here.
+static void serviceSerialCommands() {
+    static char lineBuf[256];
+    static size_t lineLen = 0;
+    while (Serial.available()) {
+        char c = (char)Serial.read();
+        if (c == '\n' || c == '\r') {
+            if (lineLen > 0) {
+                lineBuf[lineLen] = '\0';
+                processBleCommand(lineBuf);
+                lineLen = 0;
+            }
+        } else if (lineLen < sizeof(lineBuf) - 1) {
+            lineBuf[lineLen++] = c;
+        }
+    }
+}
 
 void loop() {
     uint32_t now = millis();
@@ -351,6 +559,15 @@ void loop() {
         ESP.restart();
     }
     s_lastLoopRun = now;
+
+    // Run any BLE command queued by BleRxCallback::onWrite() — see that
+    // handoff buffer's comment for why this can't just run in the callback.
+    if (s_blePending) {
+        s_blePending = false;
+        processBleCommand(s_bleCmdBuf);
+    }
+
+    serviceSerialCommands();
 
     // TEST MODE: send diagnostic SMS every 5 seconds
     if (TEST_MODE) {
@@ -366,8 +583,17 @@ void loop() {
     locator::service();
     motion::service();
     report::service();
-    store::drain();
+    // Skipped while sos.cpp is mid-send: see sos::smsIdle()'s comment — this
+    // stops store::drain() from racing sos.cpp's own immediate send and
+    // firing an avoidable extra SMS to the scanner before that attempt even
+    // gets a chance to run.
+    if (sos::smsIdle()) store::drain();
     modem::closeIdle();
+    // Non-blocking CFUN=1/CFUN=4 duty-cycle scheduler — see config.h's
+    // MODEM_CFUN_IDLE_ENABLED block. Opens periodic windows to check for
+    // incoming SMS and drain any store.cpp backlog, then aggressively
+    // drops back to CFUN=4 (LiPo BMS brownout mitigation).
+    modem::servicePowerCycle();
 
     // Periodic battery check (estimated, no ADC)
     if (now - s_lastBatteryCheck >= BATTERY_CHECK_INTERVAL_MS) {
@@ -375,10 +601,15 @@ void loop() {
         checkBattery();
     }
 
-    // SMS command polling — every 10 seconds, check for config texts
+    // SMS command polling — only while the radio is actually up (a
+    // scheduled window, or sendSms() woke it for an outbound send): AT+CMGL
+    // would just fail/waste a cycle while idling at CFUN=4, since a
+    // message can only be delivered here while registered in the first
+    // place. Polled more often than the old flat 10s while a window IS
+    // open, since windows are now the exception rather than the norm.
     static uint32_t s_lastSmsPoll = 0;
-    if (now - s_lastSmsPoll >= 10000) {
+    if (modem::radioReady() && now - s_lastSmsPoll >= 3000) {
         s_lastSmsPoll = now;
-        modem::pollSmsCommand(SMS_CMD_SECRET, saveSosNumber, saveScannerNumber);
+        modem::pollSmsCommand(SMS_CMD_SECRET, saveSosNumber, saveScannerNumber, sos::onServerAck);
     }
 }

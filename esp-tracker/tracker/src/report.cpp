@@ -2,6 +2,9 @@
 #include "locator.h"
 #include "motion.h"
 #include "modem.h"
+#include "battery.h"
+#include "gps.h"
+#include "store.h"
 #include "../include/config.h"
 #include <Arduino.h>
 #include <stdio.h>
@@ -95,17 +98,41 @@ static bool sendWifiScan(uint32_t now) {
 
     char wmsg[160];
     snprintf(wmsg, sizeof wmsg, "WIFISCAN %s,%s", wpayload, wcode);
-    if (modem::sendSms(s_scannerNumber, wmsg)) {
+
+    // Queued (store.cpp NVS) rather than sent directly — LiPo BMS brownout
+    // mitigation, see config.h's MODEM_CFUN_IDLE_ENABLED block. Persisting
+    // BEFORE the radio ever keys up means a brownout mid-send can't lose
+    // this: it survives the reboot and store::drain() retries it.
+    QueuedEvent ev{};
+    ev.kind = EventKind::Telemetry;
+    ev.recorded_at = epoch;
+    ev.payload_len = (uint16_t)snprintf(ev.payload, sizeof ev.payload, "%s", wmsg);
+    Serial.printf("[report] WIFISCAN due (%u APs, new since last send) — queuing for next radio window\n", toSend);
+    if (store::push(ev)) {
         s_lastScanHash = h;
         s_lastWifiSent = now;
         return true;
     }
+    Serial.println("[report] WIFISCAN queue push failed (queue full?) — will retry next scan cycle");
     return false;
 }
 
+// GPS acquisition state for routine LOC reports — GAP FIXED: before this,
+// nothing outside sos::trigger() ever called gps::power(true), so
+// locator::best() could NEVER return a GNSS fix during routine operation
+// (knownPlace()/Wi-Fi/cell resolution are still TODO stubs in locator.cpp —
+// see its own comments). Routine LOC reports were consequently dead code in
+// practice: report::service() checked locator::best() every cycle, but it
+// could only ever succeed during the few seconds after an actual SOS. This
+// state machine gives routine reporting its own GPS duty cycle, independent
+// of SOS, so a tracker that is never pressed still reports real GPS
+// positions when it has sky visibility.
+static bool     s_acquiring     = false;
+static uint32_t s_acquireStart  = 0;
+
 namespace report {
 
-void begin() { s_lastSent = 0; s_lastWifiSent = 0; s_lastScanHash = 0; }
+void begin() { s_lastSent = 0; s_lastWifiSent = 0; s_lastScanHash = 0; s_acquiring = false; }
 
 void service() {
     uint32_t now = millis();
@@ -113,25 +140,70 @@ void service() {
     // ---- LOC report: GPS-only, on motion-driven cadence ----
     uint32_t interval = (motion::state() == MotionState::Moving)
         ? REPORT_INTERVAL_MOVING_MS : REPORT_INTERVAL_STATIONARY_MS;
-    if (s_lastSent && now - s_lastSent < interval) {
-        // LOC cadence not met yet.  But WIFISCAN runs independently —
-        // check that below even when LOC is throttled.
-    } else {
+
+    if (!s_acquiring && (!s_lastSent || now - s_lastSent >= interval)) {
+        // Due, and not already trying: power the GPS on and start the
+        // clock on this attempt. gps.h: V_BCKP stays powered regardless of
+        // this gating, so ephemeris survives and a warm start is ~1s, not
+        // a 27s cold one — this is not as expensive as it looks.
+        Serial.printf("[report] LOC due (%s) — powering on GPS to acquire a fix\n",
+                      motion::state() == MotionState::Moving ? "moving" : "stationary");
+        locator::beginAcquire();
+        s_acquiring    = true;
+        s_acquireStart = now;
+    }
+
+    if (s_acquiring) {
         Fix fix;
         if (locator::best(fix)) {
-            char payload[64];
-            snprintf(payload, sizeof payload, "%c,%.6f,%.6f,%d,%lu",
+            // Battery rides on the LOC report rather than a separate message:
+            // it changes slowly, LOC already goes out on a state-driven
+            // cadence, and a dedicated battery SMS would be one more message
+            // competing with the ~700/day this already costs while moving.
+            char payload[80];
+            snprintf(payload, sizeof payload, "%c,%.6f,%.6f,%d,%lu,%u",
                      sourceCode(fix.source), fix.lat, fix.lon,
-                     (int)fix.accuracy_m, (unsigned long)fix.recorded_at);
+                     (int)fix.accuracy_m, (unsigned long)fix.recorded_at,
+                     (unsigned)battery::pct());
 
             char code[9];
             hashCode(payload, code);
 
-            char msg[96];
+            char msg[112];
             snprintf(msg, sizeof msg, "LOC %s,%s", payload, code);
 
-            if (modem::sendSms(s_scannerNumber, msg)) s_lastSent = now;
+            Serial.printf("[report] fix acquired after %lums, battery %u%% — queuing for next radio window\n",
+                          (unsigned long)(now - s_acquireStart), (unsigned)battery::pct());
+
+            // Queued (store.cpp NVS) rather than sent directly — same LiPo
+            // BMS brownout mitigation as WIFISCAN above: persisted before
+            // the radio ever keys up, so a brownout mid-send can't lose it.
+            QueuedEvent ev{};
+            ev.kind = EventKind::Telemetry;
+            ev.recorded_at = fix.recorded_at;
+            ev.payload_len = (uint16_t)snprintf(ev.payload, sizeof ev.payload, "%s", msg);
+            if (store::push(ev)) {
+                s_lastSent = now;
+            } else {
+                Serial.println("[report] LOC queue push failed (queue full?) — will retry next cadence tick");
+            }
+            gps::power(false);   // back to power-gated until the next cycle
+            s_acquiring = false;
+        } else if (now - s_acquireStart >= FIX_BUDGET_GNSS_MS) {
+            // Gave it a fair budget (matches config.h's FIX_BUDGET_GNSS_MS,
+            // previously defined but unused anywhere) — indoors this WILL
+            // happen every time, and that is expected, not a bug (same
+            // framing as SOS_TX_DEADLINE_MS). Give up until the next cycle
+            // rather than burning power holding GPS on forever.
+            Serial.printf("[report] LOC: no fix within %lums — giving up until next cycle\n",
+                          (unsigned long)FIX_BUDGET_GNSS_MS);
+            gps::power(false);
+            s_acquiring = false;
+            s_lastSent  = now;   // consumes this interval's attempt either way
         }
+        // else: still trying, say nothing more this call — gps::service()
+        // (called every loop() iteration via sos::service()/locator::service()
+        // whenever an SOS is ALSO active, or here below) keeps feeding NMEA.
     }
 
     // ---- WIFISCAN report: independent of GPS, sent on every motion scan ----

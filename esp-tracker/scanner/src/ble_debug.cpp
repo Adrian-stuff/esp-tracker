@@ -1,4 +1,5 @@
 #include "ble_debug.h"
+#include "ble_serial.h"
 #include <WiFi.h>
 #include <WiFiServer.h>
 #include <cstdarg>
@@ -113,6 +114,7 @@ void dbg(const char* fmt, ...) {
     Serial.print(buf);
     ringPush(buf);
     sendToClients(buf);
+    ble_serial::notify(buf);
 }
 
 }

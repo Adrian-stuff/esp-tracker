@@ -66,37 +66,46 @@ bool begin() {
     return true;
 }
 
-bool push(const QueuedEvent& ev) {
+bool push(QueuedEvent& ev) {
     // SOS always succeeds: evict oldest Telemetry if full
     if (s_count >= CAPACITY) {
         if (ev.kind == EventKind::Sos) {
             // Find and evict the oldest Telemetry entry
+            bool evicted = false;
             for (uint8_t i = 0; i < s_count; i++) {
                 uint8_t idx = physIdx(i);
                 if (s_buf[idx].kind == EventKind::Telemetry) {
+                    Serial.printf("[store] queue full — evicting telemetry entry %s to make room for SOS\n", s_buf[idx].id);
                     // Shift everything after this entry down
                     for (uint8_t j = i; j + 1 < s_count; j++)
                         s_buf[physIdx(j)] = s_buf[physIdx(j + 1)];
                     s_count--;
+                    evicted = true;
                     break;
                 }
             }
             // If still full after evicting all Telemetry, drop oldest anyway
             if (s_count >= CAPACITY) {
+                Serial.printf("[store] queue still full after telemetry eviction — dropping oldest entry %s\n", s_buf[s_head].id);
                 s_head = (s_head + 1) % CAPACITY;
                 s_count--;
+            } else if (!evicted) {
+                Serial.println("[store] queue full, no telemetry to evict — dropping oldest entry regardless (SOS never fails to queue)");
             }
         } else {
+            Serial.println("[store] queue full — non-SOS event dropped (not queued)");
             return false;   // non-SOS events fail when full
         }
     }
 
+    ev.attempts = 0;
+    generateId(ev.id, sizeof(ev.id));   // written into the caller's copy too — see store.h
     uint8_t idx = physIdx(s_count);
     s_buf[idx] = ev;
-    s_buf[idx].attempts = 0;
-    generateId(s_buf[idx].id, sizeof(s_buf[idx].id));
     s_count++;
     save();
+    Serial.printf("[store] queued %s (%s), depth now %u/%u\n",
+                  ev.id, ev.kind == EventKind::Sos ? "SOS" : "telemetry", s_count, CAPACITY);
     return true;
 }
 
@@ -125,9 +134,11 @@ void ack(const char* id) {
                 s_buf[physIdx(j)] = s_buf[physIdx(j + 1)];
             s_count--;
             save();
+            Serial.printf("[store] acked+removed %s, depth now %u/%u\n", id, s_count, CAPACITY);
             return;
         }
     }
+    Serial.printf("[store] ack(%s) — no matching entry (already removed, or stale/unknown id)\n", id);
 }
 
 size_t depth() { return s_count; }
@@ -182,7 +193,8 @@ void drain() {
     bool sent = false;
 
     if (ev.kind == EventKind::Sos) {
-        // SOS: send location SMS to parent's phone
+        // SOS retry: send location SMS to the SCANNER (see the retry-target
+        // note further down) — not the parent.
         // Parse payload JSON to extract lat/lon/accuracy
         float lat = 0, lon = 0, acc = 0;
         char src[16] = "unknown";
@@ -199,30 +211,66 @@ void drain() {
             src[i] = '\0';
         }
 
+        // Retries go to the SCANNER, not the parent. This queue exists to
+        // guarantee the event reaches the SERVER (see store.h's file
+        // header) — the parent already got a best-effort direct text from
+        // sos.cpp's immediate send, and re-sending THAT copy here too would
+        // double-text the parent for one button press (the bug this
+        // comment used to sit next to). If the parent's copy never arrived,
+        // the escalation ladder (dispatch cron, once this reaches Supabase)
+        // is what retries reaching them — not this local queue.
+        // " ID:<id>" lets relay-sms dedupe this retry against the same
+        // button press (so it doesn't start a second escalation ladder)
+        // and echo back a real ack — see sos.cpp's matching comment on the
+        // immediate send for the full explanation. ev.id is this entry's
+        // own queue id, generated once by store::push() and unchanged
+        // across every retry attempt of it.
         char sms[160];
         if (lat != 0 || lon != 0) {
             snprintf(sms, sizeof sms,
-                     "SOS from %s. https://maps.google.com/?q=%.5f,%.5f (+/-%dm)",
-                     DEVICE_ID, lat, lon, (int)acc);
+                     "SOS from %s. https://maps.google.com/?q=%.5f,%.5f (+/-%dm) ID:%s",
+                     DEVICE_ID, lat, lon, (int)acc, ev.id);
         } else {
-            snprintf(sms, sizeof sms, "SOS from %s. Position unknown.", DEVICE_ID);
+            snprintf(sms, sizeof sms, "SOS from %s. Position unknown. ID:%s", DEVICE_ID, ev.id);
         }
-        sent = modem::sendSms(s_sosNumber, sms);
+        Serial.printf("[store] drain: retrying SOS %s (attempt %u)\n", ev.id, ev.attempts + 1);
+        // Bounded registration wait — see ROUTINE_REG_TIMEOUT_MS's comment:
+        // this runs from the main loop and would otherwise block
+        // serviceButton() (a NEW child SOS hold) for far longer than
+        // acceptable on a cold radio.
+        sent = modem::sendSms(s_scannerNumber, sms, SMS_SEND_TIMEOUT_MS, ROUTINE_REG_TIMEOUT_MS);
     } else if (ev.kind == EventKind::Telemetry && ev.payload_len > 0) {
         // Telemetry: payload is already "LOC <src>,<lat>,<lon>,<acc>,<epoch>,<code>"
         // Just send it directly
-        sent = modem::sendSms(s_scannerNumber, ev.payload);
+        Serial.printf("[store] drain: retrying telemetry %s (attempt %u)\n", ev.id, ev.attempts + 1);
+        sent = modem::sendSms(s_scannerNumber, ev.payload, SMS_SEND_TIMEOUT_MS, ROUTINE_REG_TIMEOUT_MS);
     }
 
-    if (sent) {
+    if (sent && ev.kind != EventKind::Sos) {
+        // Telemetry: "sent" means the LOCAL MODEM accepted the SMS — not
+        // confirmed server-side storage. Weaker than the queue's header
+        // comment describes, but an accepted tradeoff for routine reports
+        // that age out anyway (see store.h) — unlike SOS, handled below.
         ack(ev.id);
+    } else if (sent && ev.kind == EventKind::Sos) {
+        // SOS: deliberately NOT acked here even though the local modem
+        // accepted it. Only a REAL ack from the server (sos::onServerAck(),
+        // via modem::pollSmsCommand's onAck) removes an SOS entry — see
+        // store.h's file header for the full round-trip. This entry stays
+        // live and WILL be retried again on the next backoff interval if no
+        // ack arrives in time; that's intentional, not a missed cleanup,
+        // and safe because relay-sms dedupes retries by this same id.
+        Serial.printf("[store] SOS %s delivered to modem — held pending real server ack (next retry in %lums if none arrives)\n",
+                      ev.id, (unsigned long)backoff_ms(ev.attempts + 1));
     } else {
-        // Increment attempts — will retry on next drain() call after backoff
+        // Local send failed outright — increment attempts, retry after backoff.
         for (uint8_t i = 0; i < s_count; i++) {
             uint8_t idx = physIdx(i);
             if (strncmp(s_buf[idx].id, ev.id, sizeof(s_buf[idx].id)) == 0) {
                 s_buf[idx].attempts++;
                 save();
+                Serial.printf("[store] %s send failed, attempt %u — next retry in %lums\n",
+                              ev.id, s_buf[idx].attempts, (unsigned long)backoff_ms(s_buf[idx].attempts));
                 break;
             }
         }

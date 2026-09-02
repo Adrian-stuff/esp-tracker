@@ -32,20 +32,31 @@ const ts = (epoch: number) => new Date(epoch * 1000).toISOString();
 //   "SOS from <device_id>. https://maps.google.com/?q=<lat>,<lon> (+/-<acc>m)"
 //   "SOS from <device_id>. Position unknown, last known follows."
 //   "SOS from <device_id>. Position unknown."
-function parseSos(text: string): { deviceId: string; lat?: number; lon?: number; accuracy_m?: number } | null {
+// The SCANNER-relayed copy (never the parent's — see sos.cpp) may carry a
+// trailing " ID:<local-queue-id>" — the tracker's own store.cpp queue id.
+// Optional and matched separately from the patterns above (not anchored to
+// end of string) so it doesn't break parsing for a tracker not yet
+// reflashed past its addition, or the rare case this SOMEHOW receives the
+// parent's un-suffixed copy instead.
+function parseSos(
+  text: string,
+): { deviceId: string; lat?: number; lon?: number; accuracy_m?: number; localId?: string } | null {
   const m = text.match(/^SOS from (.+?)\.\s/);
   if (!m) return null;
   const deviceId = m[1];
   const coordMatch = text.match(/q=(-?\d+\.?\d*),(-?\d+\.?\d*)\s*\(\+\/-(\d+)m\)/);
+  const idMatch = text.match(/\sID:(\S+)\s*$/);
+  const localId = idMatch ? idMatch[1] : undefined;
   if (coordMatch) {
     return {
       deviceId,
       lat: parseFloat(coordMatch[1]),
       lon: parseFloat(coordMatch[2]),
       accuracy_m: parseInt(coordMatch[3], 10),
+      localId,
     };
   }
-  return { deviceId };
+  return { deviceId, localId };
 }
 
 Deno.serve(async (req) => {
@@ -67,11 +78,21 @@ Deno.serve(async (req) => {
   const sos = parseSos(body.text);
   if (sos) {
     // Look up the tracker by device_id from the SMS body
-    const { data: tracker } = await db.from("devices").select("id")
+    const { data: tracker } = await db.from("devices").select("id,msisdn")
       .eq("id", sos.deviceId).eq("kind", "tracker").eq("active", true).maybeSingle();
     if (!tracker) return json({ ok: true, handled: false });
 
-    const eventId = `${tracker.id}-sos-${Date.now()}`;
+    // Idempotency key. When the tracker's own local queue id is present
+    // (sos.localId — see sos.cpp/store.cpp), USE IT: the tracker retries an
+    // unacked SOS with exponential backoff (store::drain(), "never gives
+    // up"), and a retry is the same physical button press relayed twice,
+    // not two separate emergencies. sos_events.event_id is UNIQUE, so a
+    // retry with the same localId hits the insert's conflict path below
+    // (sosEvent comes back null) and correctly skips starting a SECOND
+    // escalation ladder — phone calls, repeat SMS — for one press.
+    // Falls back to a timestamp-based id when localId is absent (a tracker
+    // not yet reflashed past this addition), same as before this existed.
+    const eventId = sos.localId ? `${tracker.id}-sos-${sos.localId}` : `${tracker.id}-sos-${Date.now()}`;
 
     // Store location if we have coordinates
     let locId: number | null = null;
@@ -85,7 +106,9 @@ Deno.serve(async (req) => {
       locId = loc?.id ?? null;
     }
 
-    // Insert SOS event
+    // Insert SOS event. onConflict is implicit via the unique constraint —
+    // a duplicate event_id makes this a no-op insert; .maybeSingle() then
+    // returns null, which the dedup check below relies on.
     const { data: sosEvent } = await db.from("sos_events").insert({
       event_id: eventId, device_id: tracker.id,
       triggered_at: now, received_at: receivedAt,
@@ -93,6 +116,27 @@ Deno.serve(async (req) => {
       first_location_id: locId, best_location_id: locId,
       device_sms_sent: true,  // tracker sent SMS directly to parent
     }).select("id").maybeSingle();
+
+    // Ack the tracker's local queue regardless of whether this was a fresh
+    // event or a dedup'd retry — either way, THIS delivery reached the
+    // server, which is exactly what the tracker's queue is waiting to hear
+    // to stop retrying. Routed through the scanner's existing outbox relay
+    // (relay.cpp already sends whatever outbox gives it to whatever
+    // to_number is specified — no scanner firmware change needed here).
+    // fallback_after is set far in the future deliberately: this is a
+    // machine-only optimization message, not something worth spending real
+    // SMS-provider money on via sweep-outbox if the scanner is briefly
+    // offline — the tracker's own local backoff retry is a perfectly
+    // adequate (free) fallback if this ack is delayed or lost.
+    if (sos.localId && tracker.msisdn) {
+      await db.from("outbox").insert({
+        to_number: tracker.msisdn,
+        body: `${SMS_CMD_SECRET} ACK ${sos.localId}`,
+        child_device_id: tracker.id,
+        fallback_after: new Date(Date.now() + 24 * 3600_000).toISOString(),
+        ref: eventId,
+      });
+    }
 
     if (sosEvent) {
       // Rung 1: realtime push (implicit via Realtime publication)
@@ -129,7 +173,13 @@ Deno.serve(async (req) => {
 
     if (error) console.error("[relay-sms] location upsert error:", error);
 
-    await db.from("devices").update({ last_seen_at: receivedAt }).eq("id", tracker.id);
+    // battery_pct rides on the LOC report — see report.cpp. undefined for a
+    // tracker not yet reflashed past its addition to the wire format; don't
+    // overwrite a real last-known value with null in that case.
+    await db.from("devices").update({
+      last_seen_at: receivedAt,
+      ...(loc.battery_pct != null ? { battery_pct: loc.battery_pct } : {}),
+    }).eq("id", tracker.id);
     return json({ ok: true, handled: true, type: "loc" });
   }
 

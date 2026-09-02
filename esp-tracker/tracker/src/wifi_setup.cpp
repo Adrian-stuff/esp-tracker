@@ -7,6 +7,7 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <Preferences.h>
+#include "esp_system.h"   // esp_reset_reason() — see buttonHeldAtBoot()'s safety guard
 
 // AP credentials — open network, no password (config is ephemeral)
 static const char* AP_SSID = "Tracker-Setup";
@@ -250,7 +251,54 @@ static void handleNotFound() {
     server.send(302, "text/plain", "");
 }
 
+static const char* resetReasonName(esp_reset_reason_t r) {
+    switch (r) {
+        case ESP_RST_POWERON:   return "POWERON";
+        case ESP_RST_EXT:       return "EXT";
+        case ESP_RST_SW:        return "SW (ESP.restart())";
+        case ESP_RST_PANIC:     return "PANIC";
+        case ESP_RST_INT_WDT:   return "INT_WDT";
+        case ESP_RST_TASK_WDT:  return "TASK_WDT";
+        case ESP_RST_WDT:       return "WDT";
+        case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+        case ESP_RST_BROWNOUT:  return "BROWNOUT";
+        case ESP_RST_SDIO:      return "SDIO";
+        default:                return "UNKNOWN";
+    }
+}
+
 bool wifi_setup::buttonHeldAtBoot() {
+    // SAFETY GUARD — only ever enter setup mode on a genuine cold power-on.
+    //
+    // A SIM800L TX burst browning out the ESP32 mid-send is a CONFIRMED
+    // real failure mode on this hardware (see AGENTS.md's power warning,
+    // config.h's MODEM_CFUN_IDLE_ENABLED block). If that happens WHILE a
+    // child is holding the SOS button — the exact moment it's most likely,
+    // since triggering an SOS is what starts the SMS send in the first
+    // place — the device reboots with the button STILL physically held.
+    // Without this guard, that reads identically to "someone is
+    // deliberately holding SOS at power-on to enter setup" and the device
+    // boots into a 5-minute WiFi captive portal with the SOS button
+    // completely unresponsive — during an actual emergency, that is the
+    // worst possible failure this firmware could produce.
+    //
+    // A deliberate "hold SOS at boot" gesture only ever happens paired
+    // with an actual power cycle (unplugging/replugging, a fresh battery
+    // connection) — exactly what ESP_RST_POWERON means. Every other reset
+    // reason (brownout, software restart, watchdog, panic) skips this
+    // check entirely, regardless of button state, and falls through to
+    // normal boot — where store.cpp's persisted queue (see store.h) and
+    // serviceButton()'s own hold-detection naturally pick the SOS back up:
+    // if the button is still held once loop() starts, a fresh 2s hold is
+    // detected and sos::trigger() fires again on its own.
+    esp_reset_reason_t reason = esp_reset_reason();
+    if (reason != ESP_RST_POWERON) {
+        Serial.printf("[wifi_setup] reset reason: %s (not a cold power-on) — "
+                      "skipping WiFi setup check, button state ignored this boot\n",
+                      resetReasonName(reason));
+        return false;
+    }
+
     pinMode(PIN_SOS_BUTTON, INPUT_PULLUP);
     delay(50);  // let pull-up settle
     return digitalRead(PIN_SOS_BUTTON) == LOW;

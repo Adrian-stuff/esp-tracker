@@ -1,6 +1,7 @@
 #include "modem.h"
 #include "../include/pins.h"
 #include "../include/config.h"
+#include "store.h"   // store::depth() — wakes early when there's a backlog to drain
 #include <HardwareSerial.h>
 #include <string.h>
 #include <stdio.h>
@@ -56,14 +57,66 @@ static bool winEnds(const char* s) {
 
 static void atSend(const char* cmd) { s_serial.print(cmd); s_serial.print("\r\n"); }
 
+// Blackout detector — every AT exchange in this file funnels through
+// atWait(), so this is the one place that sees every timeout regardless of
+// which higher-level call it came from. A SIM800L brownout mid-TX-burst
+// (see AGENTS.md's power warning — 2A bursts, needs a bulk cap right at the
+// module) is exactly the failure mode this exists to surface: the module
+// resets or hangs, every AT command after that times out identically, and
+// without this nothing would distinguish "briefly out of coverage" from
+// "the modem fell off the bus and isn't coming back without a power cycle".
+static uint8_t  s_consecutiveFail = 0;
+static bool     s_blackout        = false;
+static constexpr uint8_t BLACKOUT_THRESHOLD = 3;
+
+// Most recent sendSms() failure reason, human-readable — set alongside the
+// Serial log line, and exposed via modem::lastError() so a caller that
+// isn't watching the serial console (e.g. the BLE SEND command) can show
+// the same detail instead of just "failed, go check the log".
+static char s_lastError[80] = "";
+
+// ---------------------------------------------------------- power cycle --
+// Shared between sendSms()'s own self-wake/self-sleep and the
+// servicePowerCycle() scheduler below — see config.h's
+// MODEM_CFUN_IDLE_ENABLED block for the brownout problem this exists to
+// mitigate. s_radioAwake is the single source of truth for "is CFUN
+// currently 1 right now" that both consult so they don't fight each other
+// (e.g. the scheduler won't open a second window if sendSms() already has
+// one open for an outbound send, and vice versa).
+static bool     s_radioAwake      = false;
+enum class RadioState : uint8_t { Idle, WaitReg, Window };
+static RadioState s_radioState      = RadioState::Idle;
+static uint32_t   s_stateSince      = 0;
+static uint32_t   s_lastWindowClose = 0;
+static uint32_t   s_lastPeriodicWake = 0;
+static uint32_t   s_lastRegPoll     = 0;
+static bool       s_urgentRequest   = false;
+
 static bool atWait(const char* token, uint32_t timeoutMs) {
     memset(s_win, 0, sizeof(s_win));
     uint32_t deadline = millis() + timeoutMs;
     while ((int32_t)(millis() - deadline) < 0) {
         if (s_serial.available()) {
             winPush((char)s_serial.read());
-            if (winEnds(token)) return true;
+            if (winEnds(token)) {
+                if (s_consecutiveFail) {
+                    Serial.printf("[modem] responding again after %u failed command(s)\n", s_consecutiveFail);
+                    s_consecutiveFail = 0;
+                    s_blackout = false;
+                }
+                return true;
+            }
         }
+    }
+    Serial.printf("[modem] AT timeout waiting for \"%s\" (%lums)\n", token, (unsigned long)timeoutMs);
+    s_consecutiveFail++;
+    if (!s_blackout && s_consecutiveFail >= BLACKOUT_THRESHOLD) {
+        s_blackout = true;
+        Serial.printf(
+            "[modem] *** SIM800L BLACKOUT SUSPECTED *** %u consecutive AT timeouts — "
+            "module not responding. Check LiPo connection and the bulk cap at the "
+            "module (brownout during a TX burst is the classic cause; see AGENTS.md).\n",
+            s_consecutiveFail);
     }
     return false;
 }
@@ -94,6 +147,7 @@ static uint8_t readFor(char* buf, size_t cap, uint32_t timeoutMs) {
 namespace modem {
 
 bool begin() {
+    Serial.println("[modem] powering on SIM800L...");
     pinMode(PIN_MODEM_EN, OUTPUT);
     pinMode(PIN_MODEM_PWRKEY, OUTPUT);
     pinMode(PIN_MODEM_DTR, OUTPUT);
@@ -105,10 +159,25 @@ bool begin() {
     delay(3000);   // module boot time, same figure confirmed on the scanner's identical SIM800L
 
     bool ok = false;
-    for (uint8_t i = 0; i < 5 && !ok; i++) ok = atCmd("AT", "OK", 2000);
-    if (!ok) return false;
+    for (uint8_t i = 0; i < 5 && !ok; i++) {
+        Serial.printf("[modem] AT probe %u/5...\n", i + 1);
+        ok = atCmd("AT", "OK", 2000);
+    }
+    if (!ok) {
+        Serial.println("[modem] *** NO RESPONSE FROM SIM800L AFTER 5 PROBES *** "
+                        "check power/wiring — see AGENTS.md's power warning.");
+        return false;
+    }
+    Serial.println("[modem] SIM800L responding, configuring...");
     atCmd("ATE0", "OK", 1000);         // stop echoing commands back
     atCmd("AT+CMGF=1", "OK", 1000);    // SMS text mode, set once
+    // Radio is at its power-on default (CFUN=1) here — deliberately left
+    // that way so setup()'s syncClockFromNetwork() (needs NITZ, which
+    // needs registration) has a chance to work. main.cpp calls
+    // modem::enterIdle() once, right after that attempt, to drop into the
+    // CFUN=4 baseline — see config.h's MODEM_CFUN_IDLE_ENABLED block.
+    s_radioAwake = true;
+    Serial.println("[modem] ready");
     return true;
 }
 
@@ -131,6 +200,115 @@ void wake() {
     delay(50);
     // Send a dummy AT to wake the modem from CSCLK sleep
     atCmd("AT", "OK", 1000);
+}
+
+// True once BLACKOUT_THRESHOLD consecutive AT commands have timed out —
+// see atWait() above. Stays true until an AT command succeeds again.
+bool blackout() { return s_blackout; }
+
+// Human-readable reason the last sendSms() call failed, or "" if it
+// succeeded (or nothing has been sent yet). See sendSms() for what sets it.
+const char* lastError() { return s_lastError; }
+
+// Explicit one-time transition from the modem's power-on default (CFUN=1,
+// left that way by begin() so setup()'s syncClockFromNetwork() gets a
+// chance to register) into the CFUN=4 idle baseline. Call once, after that
+// clock-sync attempt, before entering loop().
+void enterIdle() {
+    if (!MODEM_CFUN_IDLE_ENABLED) return;
+    Serial.println("[modem] entering CFUN=4 idle baseline");
+    atCmd("AT+CFUN=4", "OK", 3000);
+    s_radioAwake = false;
+    s_radioState = RadioState::Idle;
+    s_lastWindowClose = millis();
+}
+
+void forceWindow() { s_urgentRequest = true; }
+bool radioReady()  { return s_radioAwake; }
+
+static void closeWindow(const char* why) {
+    delay(MODEM_AT_GAP_MS);
+    Serial.printf("[modem] power-cycle: %s — CFUN=4\n", why);
+    atCmd("AT+CFUN=4", "OK", 3000);
+    s_radioAwake       = false;
+    s_radioState       = RadioState::Idle;
+    s_lastWindowClose  = millis();
+}
+
+// Non-blocking CFUN duty-cycle scheduler — see config.h's
+// MODEM_CFUN_IDLE_ENABLED block. Call every loop() iteration. Distinct
+// from sendSms()'s own self-wake/self-sleep: this one periodically opens a
+// window to check for INCOMING SMS (a message can only be delivered while
+// registered — there is no way to "poll for it" while sitting in CFUN=4),
+// and gives any store.cpp backlog a chance to drain without each queued
+// item individually paying the registration wait sendSms() would
+// otherwise incur on its own.
+//
+// NOTE ON "non-blocking": the WAITING (for the timer, for registration, for
+// the window to elapse) is fully non-blocking, spread across many loop()
+// calls via millis(). The actual instant of sending "AT+CFUN=1"/"AT+CFUN=4"
+// is still one short, bounded AT round trip (typically well under a
+// second) — same as every other AT command in this file. Making that one
+// instant non-blocking too would mean rewriting the whole UART layer
+// around an async state machine, which nothing else here does either.
+void servicePowerCycle() {
+    if (!MODEM_CFUN_IDLE_ENABLED) return;
+    uint32_t now = millis();
+
+    switch (s_radioState) {
+    case RadioState::Idle: {
+        if (s_radioAwake) return;   // sendSms() already has the radio up — nothing to do
+
+        bool cooldownOver = (now - s_lastWindowClose) >= MODEM_MIN_COOLDOWN_MS;
+        if (!s_urgentRequest && !cooldownOver) return;
+
+        bool periodicDue  = (now - s_lastPeriodicWake) >= MODEM_WAKE_INTERVAL_MS;
+        bool queuePending = store::depth() > 0;
+        if (!s_urgentRequest && !periodicDue && !queuePending) return;
+
+        Serial.printf("[modem] power-cycle: opening a window (%s) — CFUN=1\n",
+                      s_urgentRequest ? "urgent request" : periodicDue ? "periodic check" : "queue backlog");
+        atCmd("AT+CFUN=1", "OK", 5000);
+        s_radioAwake = true;
+        if (periodicDue) s_lastPeriodicWake = now;
+        delay(MODEM_AT_GAP_MS);
+        s_radioState = RadioState::WaitReg;
+        s_stateSince = now;
+        return;
+    }
+
+    case RadioState::WaitReg: {
+        if (now - s_lastRegPoll >= 1000) {   // poll at most once/sec — non-blocking
+            s_lastRegPoll = now;
+            int8_t stat = networkStatus();
+            if (stat == 1 || stat == 5) {
+                Serial.println("[modem] power-cycle: registered — window open");
+                s_urgentRequest = false;
+                s_radioState = RadioState::Window;
+                s_stateSince = now;
+                return;
+            }
+        }
+        if (now - s_stateSince >= MODEM_REG_TIMEOUT_MS) {
+            s_urgentRequest = false;
+            closeWindow("registration timed out");
+        }
+        return;
+    }
+
+    case RadioState::Window: {
+        // Nothing to actively do here: main.cpp polls pollSmsCommand()
+        // while radioReady() is true, and store::drain() (already gated on
+        // sos::smsIdle()) runs from loop() regardless — it'll find
+        // s_radioAwake already true via sendSms() and just use this open
+        // window instead of opening its own. This state just holds the
+        // window open until its time is up.
+        if (now - s_stateSince >= MODEM_WAKE_WINDOW_MS) {
+            closeWindow("window elapsed");
+        }
+        return;
+    }
+    }
 }
 
 int  postJson(const char* path, const char* json) { (void)path;(void)json; return -1; } // see file header — no GPRS to send it over
@@ -169,13 +347,114 @@ bool syncClockFromNetwork() {
     return true;
 }
 
-bool sendSms(const char* number, const char* text) {
+// While blackout() is true, sendSms() below fails almost instantly instead
+// of repeating the full ~19s wake/register/send/sleep sequence — see its
+// own comment. This is how often it still tries a FULL attempt anyway, to
+// notice the modem coming back.
+static constexpr uint32_t BLACKOUT_PROBE_INTERVAL_MS = 60000;
+static uint32_t s_lastBlackoutProbe = 0;
+
+bool sendSms(const char* number, const char* text, uint32_t timeoutMs, uint32_t regTimeoutMs) {
+    // FAIL FAST if the modem is already confirmed unresponsive (blackout()
+    // — 3+ consecutive AT timeouts already seen). CONFIRMED REAL PROBLEM,
+    // not theoretical: without this, every store::drain() retry of a
+    // queued Telemetry/SOS entry (roughly every 2s+ while backoff is still
+    // small) repeats the FULL wake sequence below regardless of whether
+    // the modem is even there — CFUN=1 attempt (~5s) + registration poll
+    // (up to regTimeoutMs) + AT+CMGS attempt (~3s) + CFUN=4 close (~3s),
+    // all of which time out identically when nothing answers. That is up
+    // to ~19-27s of loop() blocked on a doomed attempt, repeating every
+    // backoff cycle — during which serviceButton() never runs, so an
+    // entire 2-second SOS press-and-release can happen in the gap and
+    // never be sampled at all. Skip the whole dance most of the time once
+    // blackout is confirmed; still try a full attempt every
+    // BLACKOUT_PROBE_INTERVAL_MS so recovery is noticed.
+    if (MODEM_CFUN_IDLE_ENABLED && !s_radioAwake && s_blackout) {
+        uint32_t now = millis();
+        if (now - s_lastBlackoutProbe < BLACKOUT_PROBE_INTERVAL_MS) {
+            snprintf(s_lastError, sizeof s_lastError, "modem in blackout — skipped wake, failing fast");
+            Serial.printf("[modem] sendSms to %s: skipped — blackout suspected, next full retry in ~%lus\n",
+                          number, (unsigned long)((BLACKOUT_PROBE_INTERVAL_MS - (now - s_lastBlackoutProbe)) / 1000));
+            return false;
+        }
+        s_lastBlackoutProbe = now;
+        Serial.println("[modem] sendSms: blackout probe interval elapsed — trying a full wake anyway");
+    }
+
+    // Wake the radio ourselves if it's idle — see config.h's
+    // MODEM_CFUN_IDLE_ENABLED block. selfWoke tracks whether THIS call is
+    // the one that has to put it back to sleep afterward: if a
+    // servicePowerCycle() window (or another sendSms() call, shouldn't
+    // overlap in this single-threaded design but just in case) already has
+    // the radio up, we use it and leave closing it to whoever opened it.
+    bool selfWoke = false;
+    if (MODEM_CFUN_IDLE_ENABLED && !s_radioAwake) {
+        selfWoke = true;
+        Serial.println("[modem] sendSms: radio idle — waking (AT+CFUN=1) before sending...");
+        atCmd("AT+CFUN=1", "OK", 5000);
+        s_radioAwake = true;   // RF is up now regardless of registration status yet
+        // Whatever forceWindow() was asked for (see sos::trigger()) is now
+        // moot: we're waking the radio right now ourselves. This MUST be
+        // cleared here — servicePowerCycle()'s WaitReg state is the only
+        // other place that clears it, and if sendSms() (as it almost always
+        // does, since SOS calls forceWindow() then sendSms() moments later)
+        // gets to the radio first, the scheduler's Idle case never reaches
+        // WaitReg at all. Without this line the flag stays stuck true
+        // forever, and the scheduler's own "urgent requests bypass the
+        // cooldown" logic then reopens a window on every single Idle check
+        // with NO cooldown — a tight CFUN=1/CFUN=4 loop after every SOS,
+        // which is worse than the brownout problem this all exists to fix.
+        s_urgentRequest = false;
+        delay(MODEM_AT_GAP_MS);
+
+        uint32_t start = millis();
+        int8_t stat = -1;
+        while ((int32_t)(millis() - (start + regTimeoutMs)) < 0) {
+            stat = networkStatus();
+            if (stat == 1 || stat == 5) break;   // 1=home, 5=roaming
+            delay(MODEM_AT_GAP_MS);
+        }
+        Serial.printf("[modem] sendSms: %s after %lums\n",
+                      (stat == 1 || stat == 5) ? "registered" : "registration timed out, trying anyway",
+                      (unsigned long)(millis() - start));
+    }
+
+    Serial.printf("[modem] sending SMS to %s (%u bytes, timeout %lums): %s\n",
+                  number, (unsigned)strlen(text), (unsigned long)timeoutMs, text);
     char cmd[32];
     snprintf(cmd, sizeof cmd, "AT+CMGS=\"%s\"", number);
-    if (!atCmd(cmd, ">", 3000)) return false;
-    s_serial.print(text);
-    s_serial.write(0x1A);
-    return atWait("OK", SMS_SEND_TIMEOUT_MS);
+    bool ok;
+    if (!atCmd(cmd, ">", 3000)) {
+        snprintf(s_lastError, sizeof s_lastError,
+                 "no prompt from modem%s", s_blackout ? " (blackout suspected)" : "");
+        Serial.printf("[modem] SMS to %s FAILED — %s\n", number, s_lastError);
+        ok = false;
+    } else {
+        delay(MODEM_AT_GAP_MS);   // let the bulk cap recover before the TX-heavy body+Ctrl-Z
+        s_serial.print(text);
+        s_serial.write(0x1A);
+        ok = atWait("OK", timeoutMs);
+        if (!ok) {
+            snprintf(s_lastError, sizeof s_lastError,
+                     "no OK confirmation after send (signal/network/credit?)%s",
+                     s_blackout ? " (blackout suspected)" : "");
+        } else {
+            s_lastError[0] = '\0';
+        }
+        Serial.printf("[modem] SMS to %s %s\n", number, ok ? "sent OK" : "FAILED — no OK from modem");
+    }
+
+    // Aggressive sleep fallback (config.h): the EXACT moment this send is
+    // done — success or fail, doesn't matter — drop straight back to
+    // CFUN=4, but only if this call is the one that woke the radio.
+    if (MODEM_CFUN_IDLE_ENABLED && selfWoke) {
+        delay(MODEM_AT_GAP_MS);
+        Serial.println("[modem] sendSms: done — CFUN=4 (aggressive sleep fallback)");
+        atCmd("AT+CFUN=4", "OK", 3000);
+        s_radioAwake = false;
+        s_lastWindowClose = millis();
+    }
+    return ok;
 }
 
 bool cellInfo(uint16_t& mcc, uint16_t& mnc, uint16_t& lac, uint32_t& cellId, int8_t& rssi) {
@@ -245,7 +524,8 @@ int8_t networkStatus() {
 // SMS commands are infrequent and the loop already blocks on sendSms().
 bool pollSmsCommand(const char* secret,
                     void (*onSetSos)(const char*),
-                    void (*onSetScanner)(const char*)) {
+                    void (*onSetScanner)(const char*),
+                    void (*onAck)(const char*)) {
     while (s_serial.available()) s_serial.read();
     atSend("AT+CMGL=\"REC UNREAD\"");
     char buf[512];
@@ -283,6 +563,7 @@ bool pollSmsCommand(const char* secret,
         if (bodyLen > secLen && strncmp(body, secret, secLen) == 0) {
             const char* cmd = body + secLen;
             while (*cmd == ' ') cmd++;  // skip spaces
+            Serial.printf("[modem] unread SMS from %s: command \"%s\"\n", sender, cmd);
 
             char reply[64];
             if (strncmp(cmd, "SOS ", 4) == 0) {
@@ -295,6 +576,11 @@ bool pollSmsCommand(const char* secret,
                 while (*num == ' ') num++;
                 onSetScanner(num);
                 snprintf(reply, sizeof reply, "Scanner number set to %s", num);
+            } else if (strncmp(cmd, "ACK ", 4) == 0 && onAck) {
+                const char* id = cmd + 4;
+                while (*id == ' ') id++;
+                onAck(id);
+                snprintf(reply, sizeof reply, "Acked %s", id);
             } else {
                 snprintf(reply, sizeof reply, "Unknown cmd: %s", cmd);
             }
@@ -305,6 +591,15 @@ bool pollSmsCommand(const char* secret,
             snprintf(delCmd, sizeof delCmd, "AT+CMGD=%d", idx);
             atCmd(delCmd, "OK", 2000);
             processed = true;
+        } else {
+            // No secret prefix — not a command for us. Left as unread on
+            // the SIM rather than deleted: this poll only recognizes
+            // config/ack commands, so a stray text (wrong number, provider
+            // notice, etc.) is silently ignored on every future poll too —
+            // logged here so it's at least visible, not just silently
+            // accumulating in SIM storage.
+            Serial.printf("[modem] unread SMS from %s ignored (no command prefix): %.40s%s\n",
+                          sender, body, bodyLen > 40 ? "..." : "");
         }
 
         p = bodyEnd;

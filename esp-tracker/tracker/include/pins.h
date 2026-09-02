@@ -35,5 +35,11 @@
 #define PIN_LED            2   // onboard, debug only — not the child-facing one
 
 // ---- Power sense -----------------------------------------------------------
-#define PIN_VBAT_SENSE    34   // ADC1, input-only. Divider 100k/100k.
-#define VBAT_DIVIDER_RATIO 2.0f
+// NOT POPULATED on current hardware — there is no physical voltage divider
+// on this board, no battery sensor is fitted. This pin assignment and ratio
+// are RESERVED for a future revision that adds one; nothing currently reads
+// this pin. Battery is estimated in software instead — see battery.cpp,
+// and BATTERY_HAS_ADC_SENSOR in config.h, which must stay false until a
+// board with the real divider exists.
+#define PIN_VBAT_SENSE    34   // ADC1, input-only, if/when populated
+#define VBAT_DIVIDER_RATIO 2.0f  // matches a 100k/100k divider, if/when populated

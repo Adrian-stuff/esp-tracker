@@ -30,7 +30,10 @@ static constexpr uint32_t SOS_HIGHRATE_FOR_MS  = 30UL * 60UL * 1000UL;
 static constexpr uint8_t  SOS_MAX_PER_HOUR     = 5;
 
 // ---------------------------------------------------------------------------
-// Child-facing feedback — RGB LED (common cathode, active HIGH).
+// Child-facing feedback — RGB LED (common anode, active LOW).
+// See pins.h and feedback.cpp for the actual wiring/drive logic — this
+// comment previously said "common cathode, active HIGH", which contradicted
+// both of those and every other reference to this LED in the codebase.
 // ---------------------------------------------------------------------------
 // No piezo buzzer fitted. All feedback is visual via the RGB LED:
 //   SOS cues  : red (armed, sent, acked, cancelled)
@@ -182,6 +185,43 @@ static constexpr uint32_t REPORT_INTERVAL_STATIONARY_MS = 30UL * 60UL * 1000UL;
 // confirmed reasonable against a real SMS send on that identical modem.
 static constexpr uint32_t SMS_SEND_TIMEOUT_MS = 12000;
 
+// sos.cpp's immediate parent/scanner sends use THIS shorter timeout instead
+// of SMS_SEND_TIMEOUT_MS above. Reason: those two sendSms() calls run
+// synchronously inline from the SOS state machine, and the whole main loop
+// — including the button's cancel-hold detection — is frozen for however
+// long each one blocks. At the full 12s timeout, two sequential sends
+// (parent, then scanner) can freeze the loop for ~24s total: more than
+// 4x SOS_CANCEL_WINDOW_MS (5000ms), meaning a slow-to-ack modem could
+// silently swallow the entire cancel window. A shorter timeout here does
+// not weaken delivery — a "failed" (really: still in flight) send here just
+// falls through to store::push()'s persistent retry queue, which was
+// already going to happen regardless of this timeout's value.
+static constexpr uint32_t SOS_IMMEDIATE_SMS_TIMEOUT_MS = 4000;
+
+// How long sos.cpp's immediate sends will wait for network registration if
+// the radio was idle (CFUN=4) when SOS fired — see modem::sendSms()'s
+// regTimeoutMs parameter and config.h's MODEM_CFUN_IDLE_ENABLED block.
+// Short and deliberate: if registration hasn't happened by then, sendSms()
+// tries the send anyway rather than blocking the SOS path indefinitely —
+// the persisted store.cpp queue (see sos.cpp/store.cpp) is what actually
+// guarantees delivery either way, this just bounds how long the immediate
+// best-effort attempt can stall the main loop (button-cancel detection
+// included) waiting on a cold radio.
+static constexpr uint32_t SOS_REG_TIMEOUT_MS = 3000;
+
+// Registration-wait bound for store::drain()'s routine (non-SOS) retries —
+// Telemetry (LOC/WIFISCAN) and SOS-retry sends. Deliberately shorter than
+// MODEM_REG_TIMEOUT_MS's general 15s default: drain() runs from the main
+// loop gated only on sos::smsIdle(), so a routine background send blocking
+// on a cold-radio registration wait ALSO blocks serviceButton() — a child
+// starting to hold SOS right as a routine send begins would otherwise wait
+// up to (this + SMS_SEND_TIMEOUT_MS) before the hold is even noticed, on
+// top of the SOS_HOLD_MS it then still has to complete. Not as tight as
+// SOS_REG_TIMEOUT_MS (routine sends can afford to wait a bit longer for a
+// fair shot at registering — nothing is time-critical about them), but
+// bounded well below the general default.
+static constexpr uint32_t ROUTINE_REG_TIMEOUT_MS = 8000;
+
 #define CHILD_NAME "Ana"
 
 // Which events earn a text. Position reports never do: at the moving cadence
@@ -203,4 +243,80 @@ static constexpr uint16_t BALANCE_WARN_PESOS = 20;
 // Modem sleep. Without CSCLK the idle draw is 10-20mA and runtime halves.
 // The modem stays ATTACHED and sleeping rather than powered down: a cold GSM
 // attach costs 5-15s, and for a safety device latency beats runtime.
+//
+// SUPERSEDED on real hardware: modem::sleep()/wake() (CSCLK, DTR-based) are
+// implemented but were never actually called from anywhere in this
+// firmware — CFUN=4 idling below is what actually runs. Left defined
+// rather than deleted in case a future board without the brownout problem
+// wants the lighter-weight CSCLK approach instead (it keeps the modem
+// attached/registered, which CFUN=4 does not — faster wake, more idle
+// current).
 static constexpr bool MODEM_USE_CSCLK = true;
+
+// ---------------------------------------------------------------------------
+// Modem power-cycling — LiPo BMS brownout mitigation.
+//
+// REAL HARDWARE PROBLEM, confirmed, not theoretical: this LiPo's BMS
+// protection circuit sags/limits output enough under the SIM800L's ~2A TX
+// burst to brown out the ESP32 and restart the whole device — observed
+// happening after sending an SMS. A bulk cap and direct-to-LiPo wiring
+// (see pins.h / AGENTS.md) reduce this but do not eliminate it if the BMS
+// itself is the bottleneck; a hardware fix (better BMS, bigger cap, a
+// dedicated supercap/boost stage for the modem) is the real cure. This is
+// firmware mitigation, not a substitute for that hardware fix.
+//
+// Two-part mitigation:
+//   1. Spend as little time as possible with the RF active. AT+CFUN=4
+//      (radio off, AT/SIM interface still alive) is the idle state instead
+//      of leaving the modem attached/registered — whatever charge reserve
+//      the cap has gets to recover between deliberate, short radio-on
+//      windows instead of being kept partially drained continuously.
+//      modem::sendSms() wakes the radio itself if it's idle, sends, then
+//      immediately drops back to CFUN=4 ("aggressive sleep fallback") —
+//      every send, not just routine ones, since the brownout risk exists
+//      on every TX burst regardless of what triggered it.
+//   2. Never let a brownout mid-send lose the message. report.cpp's
+//      routine LOC/WIFISCAN sends now go through store.cpp's NVS queue
+//      instead of calling sendSms() directly — the same "persist before
+//      the radio keys up" pattern the SOS path already used. If a send
+//      itself crashes the board, the message survives the reboot and is
+//      retried on the next window rather than silently vanishing.
+static constexpr bool     MODEM_CFUN_IDLE_ENABLED = true;
+
+// Periodic wake purely to check for INCOMING SMS (routine/queued outbound
+// sends wake the radio on their own via sendSms(), independent of this
+// timer — see modem::servicePowerCycle()'s own comment for how the two
+// interact). Also re-checked early whenever the store queue has something
+// waiting, rather than only on this fixed schedule — see servicePowerCycle().
+static constexpr uint32_t MODEM_WAKE_INTERVAL_MS = 5UL * 60UL * 1000UL;
+// Minimum gap between two radio-on windows even if the queue has a
+// backlog — gives the cap real recovery time instead of bouncing straight
+// back into CFUN=1 the instant one window closes.
+static constexpr uint32_t MODEM_MIN_COOLDOWN_MS  = 30UL * 1000UL;
+// How long a window stays open once registered, listening for +CMTI and
+// draining the store queue, before the aggressive CFUN=4 fallback.
+static constexpr uint32_t MODEM_WAKE_WINDOW_MS   = 8000;
+// Give up waiting for AT+CREG to show registered after this long and fall
+// back to CFUN=4 rather than holding the radio on indefinitely.
+static constexpr uint32_t MODEM_REG_TIMEOUT_MS   = 15000;
+// Small recovery gap between AT commands in the wake/sleep sequence, so the
+// bulk cap gets a moment to recharge between exchanges rather than being
+// hit with back-to-back commands right when it is most depleted.
+static constexpr uint32_t MODEM_AT_GAP_MS        = 200;
+
+// ---------------------------------------------------------------------------
+// Battery — NO SENSOR IS FITTED on current hardware. There is no physical
+// voltage divider on PIN_VBAT_SENSE (pins.h); that pin/ratio are reserved
+// for a future board revision. Keep this false until that hardware exists —
+// flipping it on THIS hardware reads a floating pin and reports meaningless
+// noise as a percentage, which is worse than the honest uptime estimate it
+// would replace. See battery.cpp.
+static constexpr bool BATTERY_HAS_ADC_SENSOR = false;
+
+// Uptime-estimate fallback, used while BATTERY_HAS_ADC_SENSOR is false.
+// Assumes a 2500mAh LiPo with average ~5mA draw (CSCLK sleep + periodic
+// scans). This is a rough estimate — real battery life depends heavily on
+// usage patterns — not a substitute for a real sensor reading, just the best
+// available signal without one.
+static constexpr float BATTERY_CAPACITY_MAH = 2500.0f;
+static constexpr float BATTERY_AVG_DRAW_MA  = 5.0f;

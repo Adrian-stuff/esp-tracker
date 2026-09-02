@@ -31,13 +31,23 @@
 // Which is the real argument for the vibration motor: haptics are the only
 // channel that is both silent AND felt.
 
+// Order IS priority: play() below rejects a new cue whose enum value is <=
+// the currently-playing one, so higher-numbered cues pre-empt lower ones.
+// LowBattery is an ambient background tick and must never interrupt an
+// active SOS cue, so it stays numerically LOWEST (right after None) even
+// though it is declared last for readability — a low-battery check runs
+// unconditionally every 30 min in main.cpp regardless of SOS state, so this
+// ordering is load-bearing, not cosmetic. (Previously LowBattery was last in
+// BOTH declaration order and value, making it the highest-priority cue and
+// letting a routine battery tick silently clobber Armed/Sent/Acked mid-SOS —
+// exactly backwards from this comment's own stated intent.)
 enum class Cue : uint8_t {
     None = 0,
+    LowBattery,   // ambient, lowest priority — see note above
     Armed,        // 2 s hold completed — "it registered"
     Cancelled,    // aborted inside the cancel window
     Sent,         // transmitted at t+5 s
     Acked,        // server confirmed — "your parent has been told"
-    LowBattery    // ambient, lowest priority
 };
 
 namespace feedback {

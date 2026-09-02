@@ -16,6 +16,7 @@
 #include "lcd.h"
 #include "settings.h"
 #include "ble_debug.h"
+#include "ble_serial.h"
 
 // Gate attendance station.
 //
@@ -74,8 +75,9 @@ void setup() {
     if (net::online()) { clockw::syncFromNtp(); roster::refresh(); }
 
     ble_debug::begin();
+    ble_serial::begin();
 
-    ble_debug::dbg("scanner up | rtc=%d roster=%u queued=%u sms=%s\n",
+    ble_debug::dbg("scanner up | rtc=%d roster=%u queued=%u sms=%s ble=nus\n",
                    clockw::ok(), (unsigned)roster::size(), (unsigned)store::depth(),
                    !SIM900_PRESENT ? "not fitted (server will send)"
                                    : (smsq::ready() ? "ready" : "no signal"));
@@ -89,6 +91,7 @@ void loop() {
 
     net::service();
     ble_debug::service();
+    ble_serial::service();
     ui::service();
     smsq::service();      // advances one AT step per loop; never blocks the reader
     sms::pollInbox();     // polls for tracker SMS, relays to server via WiFi

@@ -43,4 +43,17 @@ bool hasFixSince(uint32_t since_ms) {
     return s_lastFixMs >= since_ms;
 }
 
+GnssDiag diagnostics() {
+    GnssDiag d{};
+    d.charsProcessed  = s_gps.charsProcessed();
+    d.passedChecksum  = s_gps.passedChecksum();
+    d.failedChecksum  = s_gps.failedChecksum();
+    d.satellitesValid = s_gps.satellites.isValid();
+    d.satellites      = d.satellitesValid ? (uint8_t)s_gps.satellites.value() : 0;
+    d.hdopValid       = s_gps.hdop.isValid();
+    d.hdop            = d.hdopValid ? (float)s_gps.hdop.hdop() : 0.0f;
+    d.hasFix          = s_gps.location.isValid();
+    return d;
+}
+
 }

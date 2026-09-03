@@ -246,12 +246,13 @@
   </ol>
 
   <h3>Step 2: Flash firmware</h3>
-  <p><strong>Windows (recommended):</strong></p>
+  <p><strong>Windows:</strong></p>
   <ol>
     <li><a href="/firmware.zip" download>Download firmware.zip</a> (817 KB)</li>
     <li>Extract both files to the same folder</li>
     <li>Double-click <code>flash.bat</code> &mdash; it installs everything and flashes the tracker</li>
   </ol>
+  <p><strong>Android:</strong> <a href="/flash-android.html">Flash from your phone via USB OTG</a> (no computer needed)</p>
   <p><strong>Manual (any OS):</strong></p>
   <pre>python3 -m platformio run -t upload -e tracker   # tracker
 python3 -m platformio run -t upload -e scanner   # scanner</pre>

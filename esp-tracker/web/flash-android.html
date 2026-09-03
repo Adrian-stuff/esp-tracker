@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flash Tracker — Android</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="manifest" href="/manifest.json">
+<style>
+.setup{ display:block; max-width:640px; margin:0 auto; padding:32px 24px 64px; }
+.setup h1{ font-size:24px; margin:0 0 4px; letter-spacing:-.02em }
+.setup .sub{ color:var(--ink-3); margin:0 0 28px; font-size:14px }
+.setup h2{ font-size:18px; margin:28px 0 10px; color:var(--ink); border-bottom:1px solid var(--line); padding-bottom:6px }
+.setup h3{ font-size:15px; margin:18px 0 8px; color:var(--ink) }
+.setup p,.setup li{ font-size:14px; line-height:1.6; color:var(--ink-2) }
+.setup ul,.setup ol{ padding-left:20px; margin:6px 0 }
+.setup li{ margin:4px 0 }
+.setup code{
+  font-family:var(--mono); font-size:13px; background:var(--bg);
+  padding:2px 5px; border-radius:3px; border:1px solid var(--line);
+}
+.setup pre{
+  background:var(--bg); border:1px solid var(--line); border-radius:5px;
+  padding:14px; overflow-x:auto; font-size:13px; line-height:1.5;
+  font-family:var(--mono); color:var(--ink); margin:10px 0;
+  word-break:break-all; white-space:pre-wrap;
+}
+.tip{
+  border-left:3px solid var(--accent); padding:10px 14px; margin:12px 0;
+  background:var(--bg); border-radius:0 5px 5px 0; font-size:13px;
+}
+.tip strong{ color:var(--accent) }
+.warn-box{
+  border-left:3px solid var(--warn); padding:10px 14px; margin:12px 0;
+  background:var(--bg); border-radius:0 5px 5px 0; font-size:13px;
+}
+.warn-box strong{ color:var(--warn) }
+.back-link{
+  display:inline-block; margin-bottom:16px; color:var(--accent);
+  text-decoration:none; font-size:13px; font-weight:600;
+}
+.back-link:hover{ text-decoration:underline }
+.dl-btn{
+  display:inline-block; padding:12px 24px; border-radius:6px;
+  background:var(--accent); color:#fff; text-decoration:none;
+  font-size:15px; font-weight:600; margin:12px 0;
+}
+.dl-btn:hover{ opacity:0.9 }
+.step-num{
+  display:inline-block; width:24px; height:24px; border-radius:50%;
+  background:var(--accent); color:#fff; text-align:center; line-height:24px;
+  font-size:12px; font-weight:700; margin-right:8px; vertical-align:middle;
+}
+</style>
+</head>
+<body>
+
+<main class="setup">
+  <a href="/" class="back-link">&larr; Back to menu</a>
+  <h1>Flash Tracker — Android</h1>
+  <p class="sub">Flash the tracker firmware from your Android phone via USB OTG. No computer needed.</p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>Android phone with <strong>USB OTG</strong> support</li>
+    <li><strong>USB OTG cable</strong> (USB-C or Micro-USB to USB-A female)</li>
+    <li><strong>Termux</strong> — install from <a href="https://f-droid.org/en/packages/com.termux/">F-Droid</a> (NOT Play Store — outdated version)</li>
+    <li><strong>Termux:USB</strong> — install from <a href="https://f-droid.org/en/packages/com.termux.usb/">F-Droid</a></li>
+  </ul>
+
+  <div class="warn-box">
+    <strong>Important:</strong> Install Termux from <strong>F-Droid</strong>, not Google Play. The Play Store version is outdated and may not work with USB.
+  </div>
+
+  <h2>Step 1: Install Termux</h2>
+  <ol>
+    <li>Install <a href="https://f-droid.org/en/packages/com.termux/">Termux</a> from F-Droid</li>
+    <li>Install <a href="https://f-droid.org/en/packages/com.termux.usb/">Termux:USB</a> from F-Droid</li>
+    <li>Open Termux — you'll see a terminal prompt</li>
+  </ol>
+
+  <h2>Step 2: Download the flash script</h2>
+  <p>Tap the button below to download the flash script, then open it in Termux:</p>
+  <a class="dl-btn" href="/firmware/flash.sh" download>Download flash.sh</a>
+
+  <div class="tip">
+    <strong>Tip:</strong> If the download doesn't start, long-press the link and choose "Save link" or "Download link".
+  </div>
+
+  <p>After downloading, run it in Termux:</p>
+  <pre>cd ~/Downloads
+bash flash.sh</pre>
+
+  <p>Or paste the entire script directly into Termux — copy the text below and paste it:</p>
+
+  <h2>Step 3: Connect the tracker</h2>
+  <ol>
+    <li>Plug the tracker into your phone using the USB OTG cable</li>
+    <li>When Android asks "Allow Termux to access USB?", tap <strong>OK</strong></li>
+    <li>If no prompt appears, open Termux:USB and grant permission there</li>
+    <li>The script will detect the ESP32 and flash automatically</li>
+  </ol>
+
+  <div class="tip">
+    <strong>Tip:</strong> If flashing doesn't start, hold the <strong>BOOT button</strong> on the tracker while the script tries to connect.
+  </div>
+
+  <h2>Step 4: Configure the tracker</h2>
+  <ol>
+    <li>After flashing, hold the SOS button for 2+ seconds until the LED blinks blue</li>
+    <li>Connect your phone to WiFi network <strong>"Tracker-Setup"</strong> (open, no password)</li>
+    <li>Open <code>http://192.168.4.1</code> in your browser</li>
+    <li>Enter SOS number, scanner number, and WiFi credentials</li>
+    <li>Tap "Save &amp; reboot"</li>
+  </ol>
+
+  <h2>Troubleshooting</h2>
+  <table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px">
+    <tr><th style="text-align:left;padding:7px 10px;border:1px solid var(--line);background:var(--bg);font-weight:600;color:var(--ink)">Problem</th><th style="text-align:left;padding:7px 10px;border:1px solid var(--line);background:var(--bg);font-weight:600;color:var(--ink)">Fix</th></tr>
+    <tr><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">No ESP32 found on USB</td><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">Check OTG cable is data-capable, not charge-only. Try a different cable.</td></tr>
+    <tr><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">USB permission not granted</td><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">Open Termux:USB app, grant permission to Termux. Re-run script.</td></tr>
+    <tr><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">Flashing fails / timeout</td><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">Hold BOOT button on tracker while script starts. Try 460800 baud.</td></tr>
+    <tr><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">Termux not from F-Droid</td><td style="padding:7px 10px;border:1px solid var(--line);color:var(--ink-2)">Uninstall Play Store version, install from F-Droid instead.</td></tr>
+  </table>
+
+  <h2>Manual flash (copy-paste)</h2>
+  <p>If the download button doesn't work, paste this entire block into Termux:</p>
+  <pre>pkg update -y && pkg install -y python curl
+pip install esptool
+curl -L -o ~/firmware.bin "https://web-ten-beta-17.vercel.app/firmware/firmware.bin"
+echo "Now plug in the tracker via USB OTG..."
+echo "Waiting 5s for USB permission prompt..."
+sleep 5
+for p in /dev/ttyUSB* /dev/ttyACM*; do
+  [ -e "$p" ] && python3 -m esptool --chip esp32 --port "$p" --baud 460800 write_flash -z 0x0 ~/firmware.bin && exit 0
+done
+echo "No ESP32 found. Check cable and USB permission."</pre>
+</main>
+
+</body>
+</html>

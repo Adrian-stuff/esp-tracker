@@ -106,6 +106,39 @@ static constexpr uint32_t FIX_BUDGET_GNSS_MS  = 30000;  // never completes indoo
 #define CLAIM_CODE     "TRACK-DEMO-2026"  // parent enters this on dashboard to pair
 #define DASHBOARD_URL  "https://web-ten-beta-17.vercel.app"  // parent dashboard
 
+// ---------------------------------------------------------------------------
+// WiFi direct uplink — PRESENTATION/DEMO BACKUP PATH. See wifi_uplink.h.
+//
+// This is deliberately separate from API_HOST/API_PATH_EVENTS above, which
+// were for the abandoned cellular GPRS/HTTP design (see modem.cpp's file
+// header) and were never a real Supabase URL. SUPABASE_URL here is the
+// actual project the scanner and dashboard already talk to — same project,
+// same DEVICE_TOKEN (its sha256 is already in devices.token_hash), just a
+// different transport (this device's own WiFi instead of the scanner's).
+//
+// change-me: WIFI_UPLINK_SSID/PASS are venue-specific — set for wherever the
+// device is being demoed, via the WiFi captive portal (wifi_setup.cpp) or
+// the SSID/PASS BLE/serial commands, not by editing these compiled-in
+// defaults for a real deployment.
+static constexpr bool WIFI_UPLINK_ENABLED = true;
+#define SUPABASE_URL        "https://nvdumsbxspevpvligzlw.supabase.co"
+#define WIFI_UPLINK_SSID    "change-me"
+#define WIFI_UPLINK_PASS    "change-me"
+
+// How often, once connected, to push this tracker's own location straight
+// to Supabase's ingest function — independent of and in addition to the
+// SMS cadence in report.cpp. Short, because this is the fast/reliable path
+// when it's available, and a presentation benefits from the map updating
+// quickly rather than waiting for the SMS cadence's 2-30 min interval.
+static constexpr uint32_t WIFI_UPLINK_LOC_INTERVAL_MS = 15UL * 1000UL;
+
+// How often to poll the outbox for a message about this tracker's own
+// child (e.g. an attendance tap notification the scanner's SIM900A failed
+// to relay) — see supabase/migrations/0005_outbox.sql's own comment, which
+// already anticipated a tracker doing this; nothing server-side needed to
+// change, only a client that actually claims and relays.
+static constexpr uint32_t WIFI_UPLINK_OUTBOX_POLL_MS = 20UL * 1000UL;
+
 // HTTP, not MQTT. Once GPRS became bursty (below), a persistent broker session
 // bought nothing: no broker to run, no separate ingest worker, and the HTTP 200
 // IS the server-level ack — no "QoS 1 is not confirmation" caveat to get wrong.

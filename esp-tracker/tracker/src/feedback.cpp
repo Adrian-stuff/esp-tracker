@@ -7,7 +7,8 @@
 //
 // Common anode → 3.3V. GPIO LOW = LED ON, GPIO HIGH = LED OFF.
 // Color scheme:
-//   Armed → orange (red + green)
+//   Pressed → dim orange (brief touch, before a hold is confirmed)
+//   Armed → orange (red + green), full brightness
 //   Cancelled → red
 //   Sent → red with faint blue
 //   Acked → green (parent confirmed)
@@ -18,6 +19,7 @@ namespace feedback {
 struct Step { uint16_t on_ms; uint16_t off_ms; };
 
 // LED patterns — same visual signatures as before, now via RGB colors.
+static const Step P_PRESSED[]   = {{80,0}};                          // single quick flash
 static const Step P_ARMED[]     = {{90,90},{90,90},{90,0}};        // quick flutter
 static const Step P_CANCELLED[] = {{700,0}};                        // one long
 static const Step P_SENT[]      = {{2000,0}};                       // steady glow
@@ -32,6 +34,7 @@ struct Pattern { const Step* steps; uint8_t n; uint32_t hold_ms; };
 static const Pattern PATTERNS[] = {
     {nullptr,     0, 0},                      // None
     {P_LOWBATT,   1, 0},                      // LowBattery
+    {P_PRESSED,   1, 0},                      // Pressed
     {P_ARMED,     3, 0},                      // Armed
     {P_CANCELLED, 1, 0},                      // Cancelled
     {P_SENT,      1, 0},                      // Sent
@@ -59,6 +62,9 @@ static void drive(bool on) {
     }
 
     switch (s_cue) {
+        case Cue::Pressed:
+            setColor(60, 25, 0);     // dim orange — "I felt that", not committed yet
+            break;
         case Cue::Armed:
             setColor(255, 100, 0);   // orange — "SOS registered, hold to cancel"
             break;

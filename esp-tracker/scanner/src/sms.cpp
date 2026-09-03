@@ -10,13 +10,15 @@
 
 static uint32_t s_lastPoll = 0;
 static String   s_rxBuf;
-static enum class St : uint8_t { Idle, WaitList, WaitDelete } s_st = St::Idle;
+static enum class St : uint8_t { Idle, WaitList, Relaying, WaitDelete } s_st = St::Idle;
 static uint32_t s_at = 0;
 
 // Parsed SMS fields from the last received message
 static char s_sender[20];
 static char s_body[202];
 static bool s_hasMessage = false;
+
+static int s_pendingIndex = -1;   // SIM900 index of the message currently being relayed
 
 static void send(const char* cmd) {
     while (smsq::serial().available()) smsq::serial().read();
@@ -28,6 +30,15 @@ static void send(const char* cmd) {
 // Parse +CMGL response lines. Format:
 //   +CMGL: <index>,"REC READ","<sender>",,<timestamp>\r\n
 //   <body>\r\n
+//
+// Reliability fix: this used to queue AT+CMGD (delete) IMMEDIATELY on
+// parsing, before the WiFi relay was even attempted — a transient network
+// blip at exactly that moment meant the message was already gone from the
+// SIM900 with nowhere else it was ever stored, a silent, permanent loss of
+// that tracker report. Now the message index is only remembered here
+// (s_pendingIndex); the SIM900's own storage IS the durability layer until
+// relay::service()'s WiFi POST is CONFIRMED successful — see the Relaying
+// state below, which is what actually deletes it, and only on success.
 static void parseResponse() {
     s_hasMessage = false;
     int idx = 0;
@@ -59,19 +70,16 @@ static void parseResponse() {
         if (bodyEnd < 0) bodyEnd = s_rxBuf.length();
         String body = s_rxBuf.substring(bodyStart, bodyEnd);
 
-        // Only take the first unread message; delete the rest later
+        // Only take the first unread message; the rest are picked up on a
+        // later poll (still "REC UNREAD" — nothing has been deleted yet).
         strncpy(s_sender, sender.c_str(), sizeof s_sender - 1);
         s_sender[sizeof s_sender - 1] = 0;
         strncpy(s_body, body.c_str(), sizeof s_body - 1);
         s_body[sizeof s_body - 1] = 0;
         s_hasMessage = true;
+        s_pendingIndex = msgIndex;
 
-        // Queue AT+CMGD for this index
-        char cmd[24];
-        snprintf(cmd, sizeof cmd, "AT+CMGD=%d", msgIndex);
-        send(cmd);
-        s_st = St::WaitDelete;
-        s_at = millis();
+        s_st = St::Relaying;
         return;
 
         // Move past this message for potential future parsing
@@ -114,13 +122,29 @@ void pollInbox() {
         }
         break;
 
+    case St::Relaying: {
+        // Blocking HTTP call (same as before — net::postRelaySms() was
+        // already synchronous), but now its result actually decides what
+        // happens to the message instead of being discarded.
+        bool ok = s_hasMessage && net::postRelaySms(s_sender, s_body);
+        s_hasMessage = false;
+        if (ok) {
+            char cmd[24];
+            snprintf(cmd, sizeof cmd, "AT+CMGD=%d", s_pendingIndex);
+            send(cmd);
+            s_st = St::WaitDelete;
+            s_at = now;
+        } else {
+            // Left as "REC UNREAD" on the SIM900 — the next poll cycle
+            // (SMS_POLL_MS later) picks it straight back up and retries.
+            // No new storage needed: the SIM900 IS the retry queue here.
+            s_st = St::Idle;
+        }
+        break;
+    }
+
     case St::WaitDelete:
         if (s_rxBuf.indexOf("OK") >= 0 || now - s_at > 3000) {
-            if (s_hasMessage) {
-                // Relay to server over WiFi
-                net::postRelaySms(s_sender, s_body);
-                s_hasMessage = false;
-            }
             s_st = St::Idle;
         }
         break;

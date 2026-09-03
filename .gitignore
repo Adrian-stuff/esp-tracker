@@ -42,3 +42,4 @@ serviceAccount*.json
 # --- Logs / OS cruft ---
 *.log
 .DS_Store
+.vercel

@@ -126,6 +126,14 @@ input{
     <label for="name">Child's name</label>
     <input id="name" name="name" type="text" placeholder="Ana" maxlength="30">
 
+    <label for="wssid">WiFi uplink network (optional, backup path)</label>
+    <input id="wssid" name="wssid" type="text" placeholder="Presentation-WiFi" maxlength="32">
+    <p class="hint">Direct-to-server backup over WiFi, bypassing the scanner — see the dashboard
+    setup guide's "WiFi uplink" section. Leave blank to stay SMS-only.</p>
+
+    <label for="wpass">WiFi password</label>
+    <input id="wpass" name="wpass" type="password" placeholder="(leave blank if unchanged)" maxlength="64">
+
     <button class="btn" type="submit">Save &amp; reboot</button>
   </form>
 
@@ -183,17 +191,26 @@ static void handleRoot() {
     // Pre-fill form with current values
     String page = CONFIG_PAGE;
 
-    String sosVal, scannerVal, nameVal;
+    String sosVal, scannerVal, nameVal, wssidVal;
     prefs.begin("tracker", true);
     sosVal = prefs.getString("sos_number", SOS_SMS_PRIMARY);
     scannerVal = prefs.getString("scanner_number", SCANNER_SMS_NUMBER);
     nameVal = prefs.getString("child_name", CHILD_NAME);
+    wssidVal = prefs.getString("wifi_ssid", "");
     prefs.end();
+    if (wssidVal == "change-me") wssidVal = "";   // compiled-in placeholder, not a real saved value
 
     // Replace placeholder values in the HTML
     page.replace("placeholder=\"+639123456789\"", String("value=\"") + sosVal + "\" placeholder=\"+639123456789\"");
     page.replace("placeholder=\"+639325762230\"", String("value=\"") + scannerVal + "\" placeholder=\"+639325762230\"");
     page.replace("placeholder=\"Ana\"", String("value=\"") + nameVal + "\" placeholder=\"Ana\"");
+    // Password is NEVER pre-filled/echoed back, same reason browsers don't:
+    // whoever opens this portal next (possibly a different person) sees a
+    // blank field, not the previously-saved secret.
+    if (wssidVal.length()) {
+        page.replace("placeholder=\"Presentation-WiFi\"",
+                     String("value=\"") + wssidVal + "\" placeholder=\"Presentation-WiFi\"");
+    }
 
     // Inject device info for parent dashboard pairing
     page.replace("__DEVICE_ID__", DEVICE_ID);
@@ -228,11 +245,18 @@ static void handleSave() {
     String sos = server.arg("sos");
     String scanner = server.arg("scanner");
     String name = server.arg("name");
+    String wssid = server.arg("wssid");
+    String wpass = server.arg("wpass");
 
     prefs.begin("tracker", false);
     if (sos.length() >= 10) prefs.putString("sos_number", sos);
     if (scanner.length() >= 10) prefs.putString("scanner_number", scanner);
     if (name.length() > 0) prefs.putString("child_name", name);
+    // WiFi uplink is optional (backup path — see wifi_uplink.h): an empty
+    // SSID field is a deliberate "stay SMS-only", not a mistake, so it's
+    // saved as-is rather than skipped like the required fields above.
+    prefs.putString("wifi_ssid", wssid);
+    if (wpass.length() > 0) prefs.putString("wifi_pass", wpass);  // blank = "leave unchanged"
     prefs.end();
 
     server.send(200, "text/html", SAVED_PAGE);

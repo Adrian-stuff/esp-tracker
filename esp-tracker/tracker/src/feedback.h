@@ -44,6 +44,10 @@
 enum class Cue : uint8_t {
     None = 0,
     LowBattery,   // ambient, lowest priority — see note above
+    Pressed,      // NEW: the instant a press starts — "I felt that", before
+                  // committing to anything. Above LowBattery (a discrete
+                  // user action matters more than an ambient tick) but
+                  // below Armed (touching the button isn't yet a 2s hold).
     Armed,        // 2 s hold completed — "it registered"
     Cancelled,    // aborted inside the cancel window
     Sent,         // transmitted at t+5 s

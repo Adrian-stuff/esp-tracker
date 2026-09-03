@@ -17,6 +17,7 @@
 #include "report.h"
 #include "wifi_setup.h"
 #include "battery.h"
+#include "wifi_uplink.h"
 
 // Persistent storage for BLE-configurable values
 static Preferences s_prefs;
@@ -48,6 +49,23 @@ static void saveScannerNumber(const char* num) {
     s_prefs.end();
     strncpy(s_scannerNumber, num, sizeof(s_scannerNumber) - 1);
     s_scannerNumber[sizeof(s_scannerNumber) - 1] = '\0';
+}
+
+// WiFi uplink credentials — see wifi_uplink.h. Reboot is required to pick
+// these up: WiFi.mode()/begin() only run once from setup()'s call to
+// wifi_uplink::begin(), matching how the SOS/scanner numbers ALSO only
+// take effect this way (loadNumbers() runs once at boot too), not because
+// of any new limitation this introduces.
+static void saveWifiSsid(const char* ssid) {
+    s_prefs.begin("tracker", false);
+    s_prefs.putString("wifi_ssid", ssid);
+    s_prefs.end();
+}
+
+static void saveWifiPass(const char* pass) {
+    s_prefs.begin("tracker", false);
+    s_prefs.putString("wifi_pass", pass);
+    s_prefs.end();
 }
 
 // BLE Serial — wireless debug output + command interface
@@ -130,15 +148,24 @@ static void processBleCommand(const char* cmd) {
         } else {
             snprintf(buf, sizeof buf, "Invalid number (need 10-15 digits)\n");
         }
+    } else if (strncmp(cmd, "WIFISSID ", 9) == 0) {
+        const char* ssid = cmd + 9;
+        saveWifiSsid(ssid);
+        snprintf(buf, sizeof buf, "WiFi SSID set to \"%s\" — reboot to connect\n", ssid);
+    } else if (strncmp(cmd, "WIFIPASS ", 9) == 0) {
+        const char* pass = cmd + 9;
+        saveWifiPass(pass);
+        snprintf(buf, sizeof buf, "WiFi password set (%u chars) — reboot to connect\n", (unsigned)strlen(pass));
     } else if (strcmp(cmd, "STATUS") == 0) {
         int8_t csq = modem::signalQuality();
         int8_t creg = modem::networkStatus();
         snprintf(buf, sizeof buf,
-            "SOS: %s\nScanner: %s\nCSQ: %d\nCREG: %d\nBatt: %u%% (%lumV)\nModem: %s%s%s\n",
+            "SOS: %s\nScanner: %s\nCSQ: %d\nCREG: %d\nBatt: %u%% (%lumV)\nModem: %s%s%s\nWiFi uplink: %s\n",
             s_sosNumber, s_scannerNumber, csq, creg,
             (unsigned)battery::pct(), (unsigned long)battery::milliVolts(),
             modem::blackout() ? "BLACKOUT SUSPECTED" : "ok",
-            modem::lastError()[0] ? ", last error: " : "", modem::lastError());
+            modem::lastError()[0] ? ", last error: " : "", modem::lastError(),
+            wifi_uplink::connected() ? "connected" : "not connected");
     } else if (strcmp(cmd, "GPS") == 0) {
         // Diagnostic, not a fix request. Indoors a real fix will never
         // arrive — see gps.h's GnssDiag comment — so this reports whether
@@ -208,8 +235,10 @@ static void processBleCommand(const char* cmd) {
             "  SCANNER +639XXXXXXXXX - set scanner number\n"
             "  SEND +639XXXXXXXXX <msg> - send a test SMS right now\n"
             "  GPS                  - test the GNSS module (5s, works indoors)\n"
+            "  WIFISSID <ssid>      - set WiFi uplink network (reboot to apply)\n"
+            "  WIFIPASS <password>  - set WiFi uplink password (reboot to apply)\n"
             "  STATUS               - show current config\n"
-            "  WIFI                 - enter WiFi config mode\n"
+            "  WIFI                 - enter WiFi config mode (captive portal)\n"
             "  HELP                 - this help\n");
     } else {
         snprintf(buf, sizeof buf, "Unknown cmd. Type HELP\n");
@@ -407,7 +436,8 @@ static void IRAM_ATTR onSosButtonEdge() {
     }
 }
 
-static uint32_t s_lastHandledPressAt = 0;   // pressAt value already acted on (fired or ruled a tap)
+static uint32_t s_lastHandledPressAt  = 0;   // pressAt value already acted on (fired or ruled a tap)
+static uint32_t s_lastFeedbackPressAt = 0;   // pressAt we've already given "Pressed" feedback for
 
 static void serviceButton() {
     // 32-bit-aligned volatile reads are atomic on the ESP32 (Xtensa) —
@@ -415,6 +445,18 @@ static void serviceButton() {
     uint32_t pressAt   = s_isrPressAt;
     uint32_t releaseAt = s_isrReleaseAt;
     bool     isDown    = s_isrIsDown;
+
+    // Immediate feedback the INSTANT a new press starts — before waiting to
+    // see if it becomes a real 2s hold. Previously there was no signal at
+    // all until either the full hold completed or nothing happened, which
+    // gives no confirmation the button (or the interrupt wiring) is
+    // actually working. Tracked separately from s_lastHandledPressAt since
+    // this fires immediately on press while that one only resolves once
+    // the press's outcome (hold vs. tap) is known.
+    if (isDown && pressAt != s_lastFeedbackPressAt) {
+        s_lastFeedbackPressAt = pressAt;
+        feedback::play(Cue::Pressed);
+    }
 
     if (pressAt == s_lastHandledPressAt) return;   // nothing new since the last press we acted on
 
@@ -496,6 +538,7 @@ void setup() {
     locator::begin();
     motion::begin();
     notify::begin();
+    wifi_uplink::begin();   // presentation/demo backup path — see wifi_uplink.h
     bool modemOk = modem::begin();
     if (!modemOk) {
         Serial.println("[boot] *** MODEM INIT FAILED — SOS/reporting will not work until this recovers ***");
@@ -583,6 +626,7 @@ void loop() {
     locator::service();
     motion::service();
     report::service();
+    wifi_uplink::service();   // presentation/demo backup path — see wifi_uplink.h
     // Skipped while sos.cpp is mid-send: see sos::smsIdle()'s comment — this
     // stops store::drain() from racing sos.cpp's own immediate send and
     // firing an avoidable extra SMS to the scanner before that attempt even

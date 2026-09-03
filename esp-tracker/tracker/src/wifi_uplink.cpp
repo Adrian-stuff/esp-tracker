@@ -97,13 +97,9 @@ static void serviceConnection() {
 }
 
 // Direct-to-Supabase location push — bypasses the scanner entirely.
-// Only pushes REAL GPS fixes. Mock locations (server-injected demo data)
-// are NOT pushed — they exist only for SMS fallback when GPS fails, and
-// pushing them would create redundant database entries via a feedback loop.
 static void pushLocation() {
     Fix fix;
     if (!locator::best(fix)) return;   // nothing to send yet, try again next tick
-    if (fix.source == FixSource::Mock) return;   // don't push demo data to the database
 
     WiFiClientSecure tls;
     tls.setInsecure();   // same pragmatic choice already made throughout

@@ -13,6 +13,12 @@ function log(msg) {
   const li = document.createElement("li");
   const t = new Date().toLocaleTimeString();
   li.textContent = `${t} — ${msg}`;
+  // Cheap heuristic, not a formal status param: every call site already
+  // writes human sentences with "FAILED" for failures and one of these verbs
+  // for a real completed action, so a colored dot costs nothing extra to
+  // wire up at each call site individually.
+  if (/fail/i.test(msg)) li.className = "log-fail";
+  else if (/sent|fired|resolved|queued|complete/i.test(msg)) li.className = "log-ok";
   $("log").prepend(li);
   while ($("log").children.length > 40) $("log").removeChild($("log").lastChild);
 }
@@ -89,6 +95,7 @@ function redrawPath() {
     L.marker(p, { title: `waypoint ${i + 1}` }).addTo(map));
   if (pathLine) map.removeLayer(pathLine);
   if (waypoints.length > 1) pathLine = L.polyline(waypoints, { color: "#0b6e68", dashArray: "6 4" }).addTo(map);
+  $("waypoint-count").textContent = `${waypoints.length} waypoint${waypoints.length === 1 ? "" : "s"}`;
 }
 
 // ------------------------------------------------------------- trail -----
@@ -129,6 +136,8 @@ function startTrail() {
   $("start-trail").disabled = true;
   $("stop-trail").disabled = false;
   $("trail-status").textContent = `Running: 0/${steps} points sent`;
+  $("trail-progress").hidden = false;
+  $("trail-progress-bar").style.width = "0%";
   log(`trail started: ${waypoints.length} waypoint(s), ${steps} points over ${$("duration").value} min`);
 
   const tick = async () => {
@@ -145,6 +154,7 @@ function startTrail() {
     });
     step++;
     $("trail-status").textContent = `Running: ${step}/${steps} points sent`;
+    $("trail-progress-bar").style.width = `${Math.round((step / steps) * 100)}%`;
     log(ok ? `point ${step}/${steps} sent (batt ${battery_pct}%)` : `point ${step} FAILED: ${JSON.stringify(data)}`);
 
     if (step >= steps) { stopTrail(); log("trail complete"); }
@@ -158,6 +168,7 @@ function stopTrail() {
   if (trailTimer) { clearInterval(trailTimer); trailTimer = null; }
   $("start-trail").disabled = false;
   $("stop-trail").disabled = true;
+  setTimeout(() => { $("trail-progress").hidden = true; }, 600);
 }
 
 async function sendOnePoint() {
@@ -192,6 +203,7 @@ async function triggerSos() {
   if (ok) {
     lastSosEventId = data.event_id;
     $("resolve-sos").disabled = false;
+    $("sos-active-badge").hidden = false;
     log(`mock SOS fired (drill, no real escalation): ${data.event_id}`);
   } else {
     log(`SOS FAILED: ${JSON.stringify(data)}`);
@@ -202,7 +214,7 @@ async function resolveSos() {
   if (!lastSosEventId) return;
   const { ok } = await callMock({ action: "resolve", event_id: lastSosEventId });
   log(ok ? `resolved ${lastSosEventId}` : "resolve FAILED");
-  if (ok) { $("resolve-sos").disabled = true; lastSosEventId = null; }
+  if (ok) { $("resolve-sos").disabled = true; $("sos-active-badge").hidden = true; lastSosEventId = null; }
 }
 
 // ---------------------------------------------------- notify-parent -----

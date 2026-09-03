@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>dev</title>
+<title>/dev — presentation control</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="/style.css">
 <meta name="robots" content="noindex, nofollow">
@@ -12,20 +12,22 @@
 
 <div id="gate" class="dev-gate">
   <form id="gate-form" class="dev-gate-form">
+    <div class="dev-gate-mark" aria-hidden="true"><span></span></div>
     <h2>/dev</h2>
     <p class="hint">Presentation control tool. Mocks a tracker's location trail and SOS events —
     no hardware needed. Not linked from anywhere; nothing here is a real device or a real alert.</p>
-    <input id="secret" type="password" placeholder="Dev secret" autocomplete="off" required>
-    <button type="submit">Enter</button>
-    <p id="gate-error" class="err"></p>
+    <label class="field-label" for="secret">Dev secret</label>
+    <input id="secret" type="password" placeholder="••••••••••••" autocomplete="off" required>
+    <button type="submit" class="btn-primary">Enter</button>
+    <p id="gate-error" class="err" role="alert"></p>
   </form>
 </div>
 
 <div id="app" hidden>
   <header>
     <a href="/" class="menu-link">&larr; Menu</a>
-    <h1>/dev — mock control</h1>
-    <span class="chip">presentation tool, not real data</span>
+    <h1>/dev <span class="h1-sub">presentation control</span></h1>
+    <span class="chip chip-dot">not real data</span>
     <button id="forget" class="linkish">Forget secret</button>
   </header>
 
@@ -40,7 +42,10 @@
       </section>
 
       <section class="panel">
-        <h2>Trail</h2>
+        <div class="panel-head">
+          <h2>Trail</h2>
+          <span id="waypoint-count" class="count-badge">0 waypoints</span>
+        </div>
         <p class="hint">Click the map to add waypoints. The trail plays through them in order.</p>
         <div class="dev-row">
           <label>Duration (min) <input id="duration" type="number" min="0.5" step="0.5" value="3"></label>
@@ -50,38 +55,46 @@
           <label>Start battery % <input id="batt-start" type="number" min="1" max="100" value="90"></label>
           <label>End battery % <input id="batt-end" type="number" min="1" max="100" value="70"></label>
         </div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap">
-          <button id="start-trail">Start trail</button>
-          <button id="stop-trail" disabled>Stop trail</button>
-          <button id="send-one" class="linkish">Send one point now</button>
+        <div class="btn-row">
+          <button id="start-trail" class="btn-primary">Start trail</button>
+          <button id="stop-trail" class="btn-ghost" disabled>Stop trail</button>
+        </div>
+        <div class="btn-row">
+          <button id="send-one" class="btn-ghost">Send one point now</button>
           <button id="clear-path" class="linkish">Clear waypoints</button>
         </div>
         <p class="hint">"Send one point now" fires a single location instantly at the last
         clicked point — handy for demoing the dashboard's real "Locate now" button's effect
         without waiting ~20s for real hardware to actually reply.</p>
+        <div id="trail-progress" class="progress" hidden>
+          <div id="trail-progress-bar" class="progress-bar"></div>
+        </div>
         <p id="trail-status" class="hint"></p>
       </section>
 
       <section class="panel">
-        <h2>SOS</h2>
+        <div class="panel-head">
+          <h2>SOS</h2>
+          <span id="sos-active-badge" class="badge badge-sos" hidden>● drill active</span>
+        </div>
         <p class="hint">Fires at the trail's current position (or the last clicked point). Marked
         as a drill server-side — never queues real SMS/voice escalation.</p>
-        <div style="display:flex; gap:6px; flex-wrap:wrap">
-          <button id="trigger-sos" class="warn-btn">Trigger mock SOS</button>
-          <button id="resolve-sos" class="linkish" disabled>Resolve it</button>
+        <div class="btn-row">
+          <button id="trigger-sos" class="btn-danger">Trigger mock SOS</button>
+          <button id="resolve-sos" class="btn-ghost" disabled>Resolve it</button>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Text parent (real SMS)</h2>
+        <h2>Text parent <span class="panel-tag">real SMS</span></h2>
         <p class="hint">Queues a real SMS, sent by the real tracker's own SIM800L, describing the
         current mock location. Only actually arrives if a real tracker whose device id (above)
         matches, and has real WiFi credentials configured (not the "change-me" default), is
         online right now — otherwise this just sits unclaimed until it expires. The phone number
         below is never looked up automatically; type it every time.</p>
         <input id="notify-phone" type="text" placeholder="+639171234567 (test number)">
-        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px">
-          <button id="notify-parent">Text parent now</button>
+        <div class="btn-row" style="margin-top:8px">
+          <button id="notify-parent" class="btn-primary">Text parent now</button>
         </div>
       </section>
 

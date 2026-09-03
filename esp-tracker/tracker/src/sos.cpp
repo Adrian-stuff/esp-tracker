@@ -174,8 +174,9 @@ void service() {
             ev.payload_len = snprintf(ev.payload, sizeof ev.payload,
                 "{\"lat\":%.6f,\"lon\":%.6f,\"accuracy_m\":%.1f,\"source\":\"%s\"}",
                 f.lat, f.lon, f.accuracy_m,
-                f.source == FixSource::Gnss ? "gnss" :
-                f.source == FixSource::Wifi ? "wifi" : "unknown");
+                f.source == FixSource::Gnss  ? "gnss" :
+                f.source == FixSource::Wifi  ? "wifi" :
+                f.source == FixSource::Mock  ? "mock" : "unknown");
         }
         // Persistent safety net FIRST: if the device loses power before the
         // immediate sends below finish, this copy survives reboot and still

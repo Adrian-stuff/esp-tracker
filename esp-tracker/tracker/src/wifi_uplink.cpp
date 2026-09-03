@@ -38,6 +38,7 @@ static const char* sourceString(FixSource s) {
         case FixSource::Wifi:      return "wifi";
         case FixSource::BleAnchor: return "ble_anchor";
         case FixSource::Cell:      return "cell";
+        case FixSource::Mock:      return "mock";
         default:                   return "cell";
     }
 }

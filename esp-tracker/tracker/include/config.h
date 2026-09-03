@@ -122,8 +122,8 @@ static constexpr uint32_t FIX_BUDGET_GNSS_MS  = 30000;  // never completes indoo
 // defaults for a real deployment.
 static constexpr bool WIFI_UPLINK_ENABLED = true;
 #define SUPABASE_URL        "https://nvdumsbxspevpvligzlw.supabase.co"
-#define WIFI_UPLINK_SSID    "change-me"
-#define WIFI_UPLINK_PASS    "change-me"
+#define WIFI_UPLINK_SSID    "school-wifi"
+#define WIFI_UPLINK_PASS    "schoolpass"
 
 // How often, once connected, to push this tracker's own location straight
 // to Supabase's ingest function — independent of and in addition to the

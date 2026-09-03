@@ -38,7 +38,7 @@ static constexpr bool API_USE_TLS = true;
 // Fallback if no saved credentials exist (compile-time defaults).
 // For production, set these via the captive portal instead.
 #define WIFI_SSID     "school-wifi"
-#define WIFI_PASS     "schoolpass123"
+#define WIFI_PASS     "schoolpass"
 
 // ---------------------------------------------------------------------------
 // Reader

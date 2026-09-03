@@ -91,6 +91,51 @@
       </section>
 
       <section class="panel">
+        <div class="panel-head">
+          <h2>WiFi &amp; Places</h2>
+          <button id="refresh-places" class="linkish" style="font-size:11px">refresh</button>
+        </div>
+        <p class="hint">Define WiFi networks for places (BSSIDs). When you mock a WiFi scan
+        with those BSSIDs, the system matches the device to the right place — same path
+        a real tracker uses, no hardware needed.</p>
+
+        <div id="places-list" class="places-list"></div>
+
+        <details class="place-create">
+          <summary class="field-label">+ Add place</summary>
+          <input id="place-name" type="text" placeholder="e.g. San Beda" style="width:100%">
+          <div class="dev-row" style="margin-top:6px">
+            <label>Kind
+              <select id="place-kind" style="font:inherit; padding:5px; border:1px solid var(--line); border-radius:4px; background:var(--bg); color:var(--ink)">
+                <option value="school">school</option>
+                <option value="home">home</option>
+                <option value="other">other</option>
+              </select>
+            </label>
+            <label>Radius (m) <input id="place-radius" type="number" min="5" step="5" value="40"></label>
+          </div>
+          <label class="field-label" style="margin-top:6px">BSSIDs (comma-separated)</label>
+          <input id="place-bssids" type="text" placeholder="AA:BB:CC:DD:EE:FF, 11:22:33:44:55:66" style="width:100%">
+          <div class="dev-row" style="margin-top:6px">
+            <label>Lat <input id="place-lat" type="number" step="any" placeholder="14.5995"></label>
+            <label>Lon <input id="place-lon" type="number" step="any" placeholder="120.9842"></label>
+          </div>
+          <button id="create-place" class="btn-primary" style="margin-top:8px; width:100%">Create place</button>
+        </details>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:12px 0">
+        <p class="hint" style="margin-bottom:6px">Mock a WiFi scan to trigger place matching.</p>
+        <div class="dev-row">
+          <label style="flex:2">BSSIDs
+            <input id="scan-bssids" type="text" placeholder="AA:BB:CC:DD:EE:FF, ...">
+          </label>
+          <label style="flex:1">RSSI <input id="scan-rssi" type="number" min="-100" max="0" value="-45"></label>
+        </div>
+        <button id="send-wifiscan" class="btn-ghost" style="width:100%; margin-top:6px">Send mock WiFi scan</button>
+        <p id="scan-result" class="hint"></p>
+      </section>
+
+      <section class="panel">
         <h2>Text parent <span class="panel-tag">real SMS</span></h2>
         <p class="hint">Queues a real SMS, sent by the real tracker's own SIM800L, describing the
         current mock location. Only actually arrives if a real tracker whose device id (above)

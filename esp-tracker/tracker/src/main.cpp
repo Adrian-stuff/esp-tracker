@@ -121,6 +121,19 @@ class BleServerCallbacks : public NimBLEServerCallbacks {
 };
 static BleServerCallbacks s_bleCbs;
 
+// Called by sos.cpp before immediate SMS sends — frees ~8mA.
+// Must be safe to call even if BLE was never init'd (e.g. early boot fail).
+static void blePowerOff() {
+    if (s_bleServer) {
+        Serial.println("[BLE] powering off (pre-SMS brownout mitigation)");
+        NimBLEDevice::deinit(true);
+        s_bleServer = nullptr;
+        s_bleTx = nullptr;
+        s_bleRx = nullptr;
+        s_bleConnected = false;
+    }
+}
+
 // Parse and execute BLE commands
 static void processBleCommand(const char* cmd) {
     // 256, not 128: STATUS now includes modem::lastError() detail (up to 80
@@ -527,6 +540,7 @@ void setup() {
     store::begin();
     Serial.printf("[boot] store queue depth on boot: %u (survived from before reset, if any)\n", (unsigned)store::depth());
     sos::begin();
+    sos::onPowerDown(blePowerOff);
     // Interrupt-driven, not polled — see serviceButton()'s own comment for
     // why: a plain poll can miss an entire press-and-release cycle if
     // loop() is blocked elsewhere when it happens. CHANGE fires on both

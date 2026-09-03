@@ -191,6 +191,29 @@ static void pollOutbox() {
     }
 }
 
+void off() {
+    // Unconditionally kill the WiFi radio. motion::begin() puts WiFi into
+    // WIFI_STA for scanning regardless of whether the uplink is enabled, so
+    // we can't gate on s_connecting or WiFi.status() — WiFi may be drawing
+    // ~50mA in STA idle even when the uplink was never configured.
+    if (WiFi.getMode() != WIFI_OFF) {
+        Serial.println("[wifi_uplink] powering off WiFi radio (pre-SMS brownout mitigation)");
+        WiFi.disconnect();
+        WiFi.mode(WIFI_OFF);
+        s_connecting = false;
+    }
+}
+
+void restore() {
+    // Re-enable WiFi STA after SOS SMS completes — motion.cpp needs it for
+    // tierWifi() scanning. Does NOT auto-connect; serviceConnection() handles
+    // that on the next loop iteration at its own backoff pace.
+    if (WiFi.getMode() == WIFI_OFF) {
+        Serial.println("[wifi_uplink] restoring WiFi STA mode (post-SOS)");
+        WiFi.mode(WIFI_STA);
+    }
+}
+
 void service() {
     serviceConnection();
     if (!connected()) return;

@@ -38,6 +38,7 @@ struct GnssDiag {
 namespace gps {
     void begin();
     void power(bool on);
+    void off();   // power gate + drain UART buffer — frees ~45mA before SMS TX
 
     // Non-blocking: feed NMEA in loop(), poll for a fix.
     void service();

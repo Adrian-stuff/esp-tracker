@@ -1,10 +1,11 @@
 #include "report.h"
+#include "store.h"
+#include "modem.h"
+#include "gps.h"
 #include "locator.h"
 #include "motion.h"
-#include "modem.h"
 #include "battery.h"
-#include "gps.h"
-#include "store.h"
+#include "sos.h"
 #include "../include/config.h"
 #include <Arduino.h>
 #include <stdio.h>
@@ -147,10 +148,15 @@ void service() {
     uint32_t now = millis();
 
     // ---- LOC report: GPS-only, on motion-driven cadence ----
+    // Skip GPS acquisition during SOS — sos.cpp owns GPS power during its
+    // window (powers on at trigger, powers off at the5s deadline before SMS).
+    // If report::service() started its own acquisition here, it would fight
+    // for GPS power and could power it on right when the modem needs max
+    // current for TX — exactly the brownout we're trying to avoid.
     uint32_t interval = (motion::state() == MotionState::Moving)
         ? REPORT_INTERVAL_MOVING_MS : REPORT_INTERVAL_STATIONARY_MS;
 
-    if (!s_acquiring && (!s_lastSent || now - s_lastSent >= interval)) {
+    if (!sos::active() && !s_acquiring && (!s_lastSent || now - s_lastSent >= interval)) {
         // Due, and not already trying: power the GPS on and start the
         // clock on this attempt. gps.h: V_BCKP stays powered regardless of
         // this gating, so ephemeris survives and a warm start is ~1s, not
@@ -163,56 +169,67 @@ void service() {
     }
 
     if (s_acquiring) {
-        Fix fix;
-        if (locator::best(fix)) {
-            // Battery rides on the LOC report rather than a separate message:
-            // it changes slowly, LOC already goes out on a state-driven
-            // cadence, and a dedicated battery SMS would be one more message
-            // competing with the ~700/day this already costs while moving.
-            char payload[80];
-            snprintf(payload, sizeof payload, "%c,%.6f,%.6f,%d,%lu,%u",
-                     sourceCode(fix.source), fix.lat, fix.lon,
-                     (int)fix.accuracy_m, (unsigned long)fix.recorded_at,
-                     (unsigned)battery::pct());
+        // Abort GPS acquisition if SOS just activated — sos.cpp now owns
+        // GPS power. Without this, report would keep feeding NMEA and
+        // eventually time out, calling gps::power(false) on an already-off
+        // module (harmless but wasteful) and consuming this interval's
+        // attempt on a doomed acquisition.
+        if (sos::active()) {
+            Serial.println("[report] GPS acquisition aborted — SOS active, deferring to sos.cpp");
+            s_acquiring = false;
+            s_lastSent = now;
+        } else {
+            Fix fix;
+            if (locator::best(fix)) {
+                // Battery rides on the LOC report rather than a separate message:
+                // it changes slowly, LOC already goes out on a state-driven
+                // cadence, and a dedicated battery SMS would be one more message
+                // competing with the ~700/day this already costs while moving.
+                char payload[80];
+                snprintf(payload, sizeof payload, "%c,%.6f,%.6f,%d,%lu,%u",
+                         sourceCode(fix.source), fix.lat, fix.lon,
+                         (int)fix.accuracy_m, (unsigned long)fix.recorded_at,
+                         (unsigned)battery::pct());
 
-            char code[9];
-            hashCode(payload, code);
+                char code[9];
+                hashCode(payload, code);
 
-            char msg[112];
-            snprintf(msg, sizeof msg, "LOC %s,%s", payload, code);
+                char msg[112];
+                snprintf(msg, sizeof msg, "LOC %s,%s", payload, code);
 
-            Serial.printf("[report] fix acquired after %lums, battery %u%% — queuing for next radio window\n",
-                          (unsigned long)(now - s_acquireStart), (unsigned)battery::pct());
+                Serial.printf("[report] fix acquired after %lums, battery %u%% — queuing for next radio window\n",
+                              (unsigned long)(now - s_acquireStart), (unsigned)battery::pct());
 
-            // Queued (store.cpp NVS) rather than sent directly — same LiPo
-            // BMS brownout mitigation as WIFISCAN above: persisted before
-            // the radio ever keys up, so a brownout mid-send can't lose it.
-            QueuedEvent ev{};
-            ev.kind = EventKind::Telemetry;
-            ev.recorded_at = fix.recorded_at;
-            ev.payload_len = (uint16_t)snprintf(ev.payload, sizeof ev.payload, "%s", msg);
-            if (store::push(ev)) {
-                s_lastSent = now;
-            } else {
-                Serial.println("[report] LOC queue push failed (queue full?) — will retry next cadence tick");
+                // Queued (store.cpp NVS) rather than sent directly — same LiPo
+                // BMS brownout mitigation as WIFISCAN above: persisted before
+                // the radio ever keys up, so a brownout mid-send can't lose it.
+                QueuedEvent ev{};
+                ev.kind = EventKind::Telemetry;
+                ev.recorded_at = fix.recorded_at;
+                ev.payload_len = (uint16_t)snprintf(ev.payload, sizeof ev.payload, "%s", msg);
+                if (store::push(ev)) {
+                    s_lastSent = now;
+                } else {
+                    Serial.println("[report] LOC queue push failed (queue full?) — will retry next cadence tick");
+                }
+                gps::power(false);   // back to power-gated until the next cycle
+                s_acquiring = false;
+            } else if (now - s_acquireStart >= FIX_BUDGET_GNSS_MS) {
+                // Gave it a fair budget (matches config.h's FIX_BUDGET_GNSS_MS,
+                // previously defined but unused anywhere) — indoors this WILL
+                // happen every time, and that is expected, not a bug (same
+                // framing as SOS_TX_DEADLINE_MS). Give up until the next cycle
+                // rather than burning power holding GPS on forever.
+                Serial.printf("[report] LOC: no fix within %lums — giving up until next cycle\n",
+                              (unsigned long)FIX_BUDGET_GNSS_MS);
+                gps::power(false);
+                s_acquiring = false;
+                s_lastSent  = now;   // consumes this interval's attempt either way
             }
-            gps::power(false);   // back to power-gated until the next cycle
-            s_acquiring = false;
-        } else if (now - s_acquireStart >= FIX_BUDGET_GNSS_MS) {
-            // Gave it a fair budget (matches config.h's FIX_BUDGET_GNSS_MS,
-            // previously defined but unused anywhere) — indoors this WILL
-            // happen every time, and that is expected, not a bug (same
-            // framing as SOS_TX_DEADLINE_MS). Give up until the next cycle
-            // rather than burning power holding GPS on forever.
-            Serial.printf("[report] LOC: no fix within %lums — giving up until next cycle\n",
-                          (unsigned long)FIX_BUDGET_GNSS_MS);
-            gps::power(false);
-            s_acquiring = false;
-            s_lastSent  = now;   // consumes this interval's attempt either way
-        }
-        // else: still trying, say nothing more this call — gps::service()
-        // (called every loop() iteration via sos::service()/locator::service()
-        // whenever an SOS is ALSO active, or here below) keeps feeding NMEA.
+            // else: still trying, say nothing more this call — gps::service()
+            // (called every loop() iteration via sos::service()/locator::service()
+            // whenever an SOS is ALSO active, or here below) keeps feeding NMEA.
+        } // end else (not sos::active())
     }
 
     // ---- WIFISCAN report: independent of GPS, sent on every motion scan ----

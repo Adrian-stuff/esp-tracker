@@ -3,6 +3,8 @@
 #include "modem.h"
 #include "store.h"
 #include "feedback.h"
+#include "wifi_uplink.h"
+#include "gps.h"
 #include "../include/pins.h"
 #include "../include/config.h"
 #include <Arduino.h>
@@ -15,11 +17,14 @@ static uint32_t s_triggered   = 0;
 static bool     s_sent        = false;
 static uint8_t  s_smsStep     = 0;  // 0= idle, 1= sending parent, 2= sending scanner, 3= done
 static char     s_queuedId[24] = "";  // store::push()'d retry copy for this SOS, if any
+static sos::PowerDownFn s_powerDownFn = nullptr;
 
 void begin() {
     pinMode(PIN_SOS_BUTTON, INPUT_PULLUP);
     feedback::begin();
 }
+
+void onPowerDown(PowerDownFn fn) { s_powerDownFn = fn; }
 
 bool active() { return s_active; }
 bool smsIdle() { return s_smsStep == 0 || s_smsStep == 3; }
@@ -130,6 +135,14 @@ static bool serviceSms() {
         s_sent = true;
         Serial.printf("[sos] t+%lums: immediate send attempts complete\n", (unsigned long)(millis() - s_triggered));
         feedback::play(Cue::Sent);
+
+        // Restore WiFi STA so motion.cpp can resume tierWifi() scanning.
+        // serviceConnection() will reconnect at its own backoff pace — we
+        // don't wait for that here. The5s refine window below gives WiFi
+        // time to reconnect and push any pending location data before the
+        // SOS window closes.
+        wifi_uplink::restore();
+
         return false;
     }
 
@@ -174,6 +187,16 @@ void service() {
         s_queuedId[sizeof(s_queuedId) - 1] = '\0';
         Serial.printf("[sos] t+%lums: 5s deadline reached, fix=%s — queued as %s, starting immediate sends\n",
                       (unsigned long)(millis() - s_triggered), have ? "yes" : "NONE (position unknown)", s_queuedId);
+
+        // Brownout mitigation: kill WiFi (~100mA), GPS (~45mA), and BLE
+        // (~8mA) BEFORE the SIM800L's 2A TX burst. The bulk cap needs every
+        // mA of headroom it can get — see config.h's MODEM_CFUN_IDLE_ENABLED
+        // block. This runs ONCE at the5s deadline, not per-SMS: the cap gets
+        // the full modem wake + registration gap to recover before TX.
+        wifi_uplink::off();
+        gps::off();
+        if (s_powerDownFn) s_powerDownFn();
+        Serial.printf("[sos] peripherals powered down for SMS TX (pre-brownout mitigation)\n");
 
         // Start non-blocking SMS sending
         s_smsStep = 1;

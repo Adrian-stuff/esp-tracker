@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
+#include <HTTPUpdateServer.h>
 #include <Preferences.h>
 #include "esp_system.h"   // esp_reset_reason() — see buttonHeldAtBoot()'s safety guard
 
@@ -19,6 +20,7 @@ static IPAddress AP_SUBNET(255, 255, 255, 0);
 
 static WebServer server(80);
 static DNSServer dns;
+static HTTPUpdateServer httpUpdater;
 static Preferences prefs;
 
 // 5 minutes — long enough to fill in the form, short enough to not kill battery
@@ -153,6 +155,7 @@ input{
   </div>
 
   <p class="status"><span class="led"></span>Config portal active — timeout in ~5 min</p>
+  <p style="margin-top:12px;text-align:center;font-size:12px"><a href="/update" style="color:#0b6e68">Update firmware</a></p>
 </div>
 </body>
 </html>
@@ -181,6 +184,82 @@ p{ color:#6d7b8b; font-size:14px }
 <h1>Saved!</h1>
 <p>Tracker will reboot in a few seconds.<br>
 Connect to the tracker's WiFi again to verify settings.</p>
+</body>
+</html>
+)rawliteral";
+
+static const char* UPDATE_PAGE = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Update Firmware</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0; padding:20px; font:15px/1.5 system-ui,-apple-system,sans-serif;
+  background:#eef1f5; color:#141a21;
+}
+@media(prefers-color-scheme:dark){
+  body{ background:#0e1318; color:#e5ebf2 }
+  .card{ background:#161d25; border-color:#2b3641; color:#e5ebf2 }
+  .sub,.hint{ color:#a7b3c1 }
+  input[type=file]{ color:#e5ebf2 }
+}
+.card{
+  max-width:420px; margin:0 auto; padding:24px; border-radius:8px;
+  border:1px solid #cfd8e2; background:#fff; color:#141a21;
+}
+h1{ margin:0 0 4px; font-size:20px }
+.sub{ color:#6d7b8b; margin:0 0 20px; font-size:13px }
+label{ display:block; margin:12px 0 4px; font-size:13px; font-weight:600 }
+input[type=file]{
+  width:100%; padding:10px 12px; border:1px solid #cfd8e2; border-radius:4px;
+  font:inherit; background:#eef1f5;
+}
+.hint{ font-size:12px; color:#6d7b8b; margin:4px 0 0 }
+.btn{
+  display:block; width:100%; margin-top:20px; padding:12px; border:0;
+  border-radius:4px; background:#0b6e68; color:#fff; font:inherit;
+  font-weight:600; cursor:pointer;
+}
+.btn:hover{ background:#095c57 }
+.btn:disabled{ background:#6d7b8b; cursor:not-allowed }
+.warn{
+  margin-top:16px; padding:12px 16px; border-radius:6px;
+  background:#fff3cd; border:1px solid #ffc107; color:#856404;
+  font-size:13px; line-height:1.5;
+}
+@media(prefers-color-scheme:dark){
+  .warn{ background:#332b00; border-color:#665600; color:#ffc107 }
+}
+.progress{ display:none; margin-top:16px; text-align:center; font-size:14px; color:#6d7b8b }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Update Firmware</h1>
+  <p class="sub">Upload a new .bin firmware file. The tracker will reboot automatically.</p>
+  <form id="updateForm" action="/update" method="POST" enctype="multipart/form-data">
+    <label for="firmware">Firmware file (.bin)</label>
+    <input type="file" id="firmware" name="update" accept=".bin" required>
+    <p class="hint">Build with: pio run -e tracker (output in .pio/build/tracker/firmware.bin)</p>
+    <button class="btn" type="submit" id="uploadBtn">Upload &amp; flash</button>
+  </form>
+  <div class="progress" id="progress">Uploading... do not close this page.</div>
+  <div class="warn">
+    <strong>Warning:</strong> Do not power off during the update. If the
+    tracker becomes unresponsive, hold the SOS button at power-on to re-enter
+    this portal and try again.
+  </div>
+</div>
+<script>
+document.getElementById('updateForm').addEventListener('submit',function(){
+  document.getElementById('uploadBtn').disabled=true;
+  document.getElementById('progress').style.display='block';
+});
+</script>
 </body>
 </html>
 )rawliteral";
@@ -270,6 +349,12 @@ static void handleSave() {
 
 // Captive portal: redirect ALL requests to the config page
 // This triggers Android/iOS captive portal detection automatically.
+static void handleUpdatePage() {
+    String page = UPDATE_PAGE;
+    page.replace("__DEVICE_ID__", DEVICE_ID);
+    server.send(200, "text/html", page);
+}
+
 static void handleNotFound() {
     server.sendHeader("Location", String("http://") + AP_IP.toString(), true);
     server.send(302, "text/plain", "");
@@ -353,6 +438,8 @@ void wifi_setup::enter() {
     // Web server routes
     server.on("/", HTTP_GET, handleRoot);
     server.on("/save", HTTP_POST, handleSave);
+    server.on("/update", HTTP_GET, handleUpdatePage);
+    httpUpdater.setup(&server, "/update");  // handles POST /update with firmware binary
     server.onNotFound(handleNotFound);
     server.begin();
 

@@ -17,6 +17,13 @@ void begin() {
 
 void power(bool on) { digitalWrite(PIN_GPS_EN, on ? HIGH : LOW); }
 
+void off() {
+    power(false);
+    // Drain any stale NMEA bytes so the next power-on starts clean
+    while (s_serial.available()) s_serial.read();
+    Serial.println("[gps] powered off (pre-SMS brownout mitigation)");
+}
+
 void service() {
     while (s_serial.available()) s_gps.encode(s_serial.read());
     // Track when we last had a valid fix

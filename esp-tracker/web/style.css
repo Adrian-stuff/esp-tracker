@@ -307,6 +307,7 @@ main{flex:1; display:flex; min-height:0}
 #dev-sidebar .panel:nth-of-type(3){ animation-delay:.10s }
 #dev-sidebar .panel:nth-of-type(4){ animation-delay:.14s }
 #dev-sidebar .panel:nth-of-type(5){ animation-delay:.18s }
+#dev-sidebar .panel:nth-of-type(6){ animation-delay:.22s }
 
 .panel-head{ display:flex; align-items:center; justify-content:space-between; gap:8px }
 .panel-head h2{ margin-bottom:0 }
@@ -370,6 +371,34 @@ main{flex:1; display:flex; min-height:0}
 #log li::before{ content:""; width:6px; height:6px; border-radius:50%; margin-top:4px; flex:none; background:var(--ink-3) }
 #log li.log-ok::before{ background:var(--ok) }
 #log li.log-fail::before{ background:var(--sos) }
+
+.places-list{ display:flex; flex-direction:column; gap:6px; margin:8px 0 }
+.place-card{
+  display:flex; align-items:center; justify-content:space-between; gap:6px;
+  padding:6px 8px; border:1px solid var(--line); border-radius:4px; background:var(--bg);
+  font-size:12px;
+}
+.place-card .place-info{ display:flex; flex-direction:column; gap:1px; min-width:0; flex:1 }
+.place-card .place-name{ font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.place-card .place-meta{ font-size:10px; color:var(--ink-3); font-family:var(--mono) }
+.place-card .place-btns{ display:flex; gap:4px; flex:none }
+.place-card button{
+  font:inherit; font-size:10px; padding:3px 7px; cursor:pointer;
+  border:1px solid var(--line); border-radius:3px; background:transparent; color:var(--ink-3);
+}
+.place-card button:hover{ border-color:var(--accent); color:var(--accent) }
+.place-card button.place-del:hover{ border-color:var(--sos); color:var(--sos) }
+.place-card button.place-use{ border-color:var(--accent); color:var(--accent); font-weight:600 }
+.place-card button.place-use:hover{ background:var(--accent); color:#fff }
+
+.place-create{ margin-top:8px }
+.place-create summary{ cursor:pointer; user-select:none }
+.place-create summary:hover{ color:var(--accent) }
+.place-create[open] summary{ margin-bottom:6px }
+.place-create input, .place-create select{
+  font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:4px;
+  background:var(--bg); color:var(--ink); margin-top:4px;
+}
 
 @keyframes dev-rise{ from{ opacity:0; transform:translateY(8px) } to{ opacity:1; transform:translateY(0) } }
 @keyframes dev-ping{ 0%{ transform:scale(.5); opacity:.5 } 100%{ transform:scale(1.7); opacity:0 } }

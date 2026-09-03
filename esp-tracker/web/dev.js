@@ -18,7 +18,7 @@ function log(msg) {
   // for a real completed action, so a colored dot costs nothing extra to
   // wire up at each call site individually.
   if (/fail/i.test(msg)) li.className = "log-fail";
-  else if (/sent|fired|resolved|queued|complete/i.test(msg)) li.className = "log-ok";
+  else if (/sent|fired|resolved|queued|complete|matched/i.test(msg)) li.className = "log-ok";
   $("log").prepend(li);
   while ($("log").children.length > 40) $("log").removeChild($("log").lastChild);
 }
@@ -87,6 +87,10 @@ function initApp() {
   $("trigger-sos").addEventListener("click", triggerSos);
   $("resolve-sos").addEventListener("click", resolveSos);
   $("notify-parent").addEventListener("click", notifyParent);
+  $("refresh-places").addEventListener("click", loadPlaces);
+  $("create-place").addEventListener("click", createPlace);
+  $("send-wifiscan").addEventListener("click", sendWifiScan);
+  loadPlaces();
 }
 
 function redrawPath() {
@@ -240,6 +244,124 @@ async function notifyParent() {
         `Only actually sends if that device is online with WiFi configured — up to ~20s if so.`);
   } else {
     log(`notify-parent FAILED: ${JSON.stringify(data)}`);
+  }
+}
+
+// -------------------------------------------------- wifi & places -----
+async function loadPlaces() {
+  const deviceId = $("device-id").value.trim();
+  if (!deviceId) return;
+  const { ok, data } = await callMock({ action: "place", sub: "list", device_id: deviceId });
+  if (!ok) { log(`load places FAILED: ${JSON.stringify(data)}`); return; }
+  const list = $("places-list");
+  list.innerHTML = "";
+  const places = data.places ?? [];
+  if (!places.length) {
+    list.innerHTML = '<p class="hint" style="margin:0">No places yet — add one below.</p>';
+    return;
+  }
+  for (const p of places) {
+    const card = document.createElement("div");
+    card.className = "place-card";
+    const bssidCount = p.bssid_set?.length ?? 0;
+    const coordStr = p.lat != null ? `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}` : "no coords";
+    card.innerHTML = `
+      <div class="place-info">
+        <span class="place-name">${esc(p.name)}</span>
+        <span class="place-meta">${esc(p.kind)} · ${bssidCount} BSSID${bssidCount === 1 ? "" : "s"} · ${coordStr}</span>
+      </div>
+      <div class="place-btns">
+        <button class="place-use" title="Fill scan BSSIDs from this place">use</button>
+        <button class="place-del" title="Delete this place">&times;</button>
+      </div>`;
+    card.querySelector(".place-use").addEventListener("click", () => usePlaceBssids(p));
+    card.querySelector(".place-del").addEventListener("click", () => deletePlace(p.id, p.name));
+    list.appendChild(card);
+  }
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+async function createPlace() {
+  const deviceId = $("device-id").value.trim();
+  if (!deviceId) { log("set a device id first"); return; }
+  const name = $("place-name").value.trim();
+  const kind = $("place-kind").value;
+  const radius = parseFloat($("place-radius").value) || 40;
+  const bssidsRaw = $("place-bssids").value.trim();
+  if (!name) { log("place name required"); return; }
+  if (!bssidsRaw) { log("at least one BSSID required"); return; }
+  const bssids = bssidsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  const lat = $("place-lat").value ? parseFloat($("place-lat").value) : null;
+  const lon = $("place-lon").value ? parseFloat($("place-lon").value) : null;
+
+  const { ok, data } = await callMock({
+    action: "place", sub: "create", device_id: deviceId,
+    name, kind, bssids, lat, lon, radius_m: radius,
+  });
+  if (ok) {
+    log(`place created: ${name} (${bssids.length} BSSIDs)`);
+    // Cache raw BSSIDs so "use" can fill the scan form later
+    if (data.place?.id) {
+      localStorage.setItem(`dev_bssid_cache_${data.place.id}`, bssids.join(", "));
+    }
+    $("place-name").value = "";
+    $("place-bssids").value = "";
+    loadPlaces();
+  } else {
+    log(`create place FAILED: ${JSON.stringify(data)}`);
+  }
+}
+
+async function deletePlace(placeId, name) {
+  const deviceId = $("device-id").value.trim();
+  if (!confirm(`Delete place "${name}"?`)) return;
+  const { ok, data } = await callMock({
+    action: "place", sub: "delete", device_id: deviceId, place_id: placeId,
+  });
+  if (ok) {
+    log(`place deleted: ${name}`);
+    localStorage.removeItem(`dev_bssid_cache_${placeId}`);
+    loadPlaces();
+  } else log(`delete place FAILED: ${JSON.stringify(data)}`);
+}
+
+function usePlaceBssids(place) {
+  // Raw BSSIDs are hashed before storage — we can't reverse them. Instead,
+  // we cache raw BSSIDs in localStorage keyed by place ID when creating,
+  // and read them back here. Falls back to hashes if no cache exists.
+  const cacheKey = `dev_bssid_cache_${place.id}`;
+  const cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    $("scan-bssids").value = cached;
+    log(`filled scan BSSIDs from "${place.name}" (cached raw values)`);
+  } else {
+    const hashes = (place.bssid_set ?? []).join(", ");
+    $("scan-bssids").value = hashes;
+    log(`filled scan BSSIDs from "${place.name}" — hashes only (re-enter raw BSSIDs to match)`);
+  }
+}
+
+async function sendWifiScan() {
+  const deviceId = $("device-id").value.trim();
+  if (!deviceId) { log("set a device id first"); return; }
+  const bssidsRaw = $("scan-bssids").value.trim();
+  if (!bssidsRaw) { log("enter at least one BSSID"); return; }
+  const rssi = parseInt($("scan-rssi").value) || -45;
+  const bssids = bssidsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  const aps = bssids.map((b) => ({ bssid: b, ssid: "mock-ap", rssi }));
+
+  const { ok, data } = await callMock({ action: "wifiscan", device_id: deviceId, aps });
+  if (ok) {
+    const matched = data.matched_place;
+    const msg = matched
+      ? `WiFi scan matched place: ${matched} (${data.scanned} APs)`
+      : `WiFi scan sent (${data.scanned} APs) — no place matched`;
+    log(msg);
+    $("scan-result").textContent = matched ? `Matched: ${matched}` : "No place matched";
+  } else {
+    log(`WiFi scan FAILED: ${JSON.stringify(data)}`);
+    $("scan-result").textContent = "";
   }
 }
 

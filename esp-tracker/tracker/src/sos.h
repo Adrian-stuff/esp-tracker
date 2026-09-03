@@ -12,6 +12,13 @@ namespace sos {
     void begin();
     void service();
 
+    // Register a callback that fires before the immediate SMS sends —
+    // used by main.cpp to disable BLE (~8mA) and by sos.cpp itself to
+    // disable WiFi (~100mA) and GPS (~45mA), reducing peak current draw
+    // to avoid LiPo BMS brownout during the SIM800L's 2A TX burst.
+    typedef void (*PowerDownFn)();
+    void onPowerDown(PowerDownFn fn);
+
     bool active();
 
     // True when sos.cpp is NOT in the middle of its own immediate 2-step

@@ -34,6 +34,15 @@ const db = createClient(
 
 const DEV_MOCK_SECRET = Deno.env.get("DEV_MOCK_SECRET") ?? "";
 
+const enc = new TextEncoder();
+async function sha256(s: string) {
+  const buf = await crypto.subtle.digest("SHA-256", enc.encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function bssidHash(bssid: string) {
+  return (await sha256(bssid.toLowerCase())).slice(0, 16);
+}
+
 // This is the one function in this project called DIRECTLY from a browser
 // with a JSON body (every other browser-facing function — claim, locate —
 // happens to work without this, which just means they've never actually
@@ -200,6 +209,123 @@ Deno.serve(async (req) => {
       status: "resolved", resolved_at: now,
     }).eq("event_id", event_id);
     return json({ ok: true });
+  }
+
+  // ----------------------------------------------------------- place ----
+  // CRUD for WiFi places. Each place stores a set of BSSID hashes that
+  // identify it — the same hashing the tracker firmware and relay-sms use
+  // (sha256, first 16 hex chars). The demo presenter defines places once,
+  // then the wifiscan action replays them to trigger place matching.
+  if (body.action === "place") {
+    const { device_id } = body;
+    if (!device_id) return json({ error: "device_id required" }, 400);
+    await ensureDevice(device_id);
+
+    // --- list ---
+    if (body.sub === "list" || (!body.sub && !body.name)) {
+      const { data: places } = await db.from("places")
+        .select("id,name,kind,bssid_set,lat,lon,radius_m")
+        .eq("device_id", device_id).order("name");
+      return json({ ok: true, places: places ?? [] });
+    }
+
+    // --- create ---
+    if (body.sub === "create") {
+      if (!body.name || !body.bssids?.length) {
+        return json({ error: "name and bssids[] required" }, 400);
+      }
+      const hashes = await Promise.all(body.bssids.map(bssidHash));
+      const { data: place, error } = await db.from("places").insert({
+        device_id, name: body.name,
+        kind: body.kind ?? "other",
+        bssid_set: hashes,
+        lat: body.lat ?? null, lon: body.lon ?? null,
+        radius_m: body.radius_m ?? 40,
+      }).select("id,name,kind,bssid_set,lat,lon,radius_m").maybeSingle();
+      if (error) return json({ error: error.message }, 500);
+      return json({ ok: true, place });
+    }
+
+    // --- delete ---
+    if (body.sub === "delete") {
+      if (!body.place_id) return json({ error: "place_id required" }, 400);
+      await db.from("places").delete().eq("id", body.place_id).eq("device_id", device_id);
+      return json({ ok: true });
+    }
+
+    return json({ error: "unknown place sub-action (list/create/delete)" }, 400);
+  }
+
+  // --------------------------------------------------------- wifiscan ----
+  // Mock a WiFi scan: inserts into wifi_scans, runs place matching, and
+  // optionally inserts a location if a place matched. This is what makes
+  // the dashboard show "at school" / "at home" during a demo — the same
+  // path a real tracker's WIFISCAN SMS would take, but without hardware.
+  if (body.action === "wifiscan") {
+    const { device_id, aps } = body;
+    if (!device_id || !aps?.length) {
+      return json({ error: "device_id and aps[] required (each: {bssid, ssid, rssi})" }, 400);
+    }
+    await ensureDevice(device_id);
+
+    const recordedAt = body.recorded_at ? new Date(body.recorded_at).toISOString() : now;
+    const hashedAps = await Promise.all(aps.map(async (a: { bssid: string; ssid?: string; rssi?: number }) => ({
+      h: await bssidHash(a.bssid),
+      ssid: (a.ssid ?? "").slice(0, 32),
+      rssi: a.rssi ?? -50,
+    })));
+
+    // Place matching — same logic as ingest and relay-sms
+    const { data: places } = await db.from("places")
+      .select("id,name,lat,lon,radius_m,bssid_set,ble_anchor_id")
+      .eq("device_id", device_id).not("bssid_set", "is", null);
+
+    const seen = new Set(hashedAps.map((a) => a.h));
+    let placeId: number | null = null;
+    let placeLat: number | null = null;
+    let placeLon: number | null = null;
+    let placeSource = "wifi";
+    let placeAccuracy = 40;
+    let matchedPlace: string | null = null;
+
+    for (const p of places ?? []) {
+      const registered: string[] = p.bssid_set ?? [];
+      if (!registered.length) continue;
+      const inter = registered.filter((h) => seen.has(h)).length;
+      if (inter >= Math.max(2, Math.floor(registered.length / 3))) {
+        placeId = p.id;
+        placeLat = p.lat;
+        placeLon = p.lon;
+        placeSource = p.ble_anchor_id ? "ble_anchor" : "wifi";
+        placeAccuracy = p.radius_m ?? 40;
+        matchedPlace = p.name;
+        break;
+      }
+    }
+
+    // Insert the scan record
+    await db.from("wifi_scans").insert({
+      device_id, recorded_at: recordedAt, place_id: placeId, aps: hashedAps,
+    });
+
+    // If a place matched and has coordinates, insert a location
+    let locationEventId: string | null = null;
+    if (placeId && placeLat != null && placeLon != null) {
+      locationEventId = `${device_id}-dev-wifi-${Date.now()}`;
+      await db.from("locations").upsert({
+        event_id: locationEventId, device_id,
+        lat: placeLat, lon: placeLon, accuracy_m: placeAccuracy,
+        source: placeSource, recorded_at: recordedAt, received_at: now,
+        place_id: placeId,
+      }, { onConflict: "event_id", ignoreDuplicates: true });
+      await db.from("devices").update({ last_seen_at: now }).eq("id", device_id);
+    }
+
+    return json({
+      ok: true, scanned: hashedAps.length,
+      matched_place: matchedPlace, place_id: placeId,
+      location_event_id: locationEventId,
+    });
   }
 
   return json({ error: `unknown action: ${body.action}` }, 400);

@@ -34,4 +34,6 @@ namespace wifi_uplink {
     void begin();     // loads SSID/password from Preferences (config.h defaults)
     void service();   // called every loop() — connects, then does both jobs on their own timers
     bool connected();
+    void off();       // disconnect + WiFi radio off — frees ~70-135mA before SMS TX
+    void restore();   // re-enable WiFi STA after SMS — motion detection needs it
 }

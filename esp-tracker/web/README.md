@@ -9,40 +9,46 @@ cd web && vercel --prod
 
 Set your project URL and anon key in `config.js` first.
 
-## Git-based deploys — Root Directory MUST be `esp-tracker/web`
+## Deploys are CLI-only — the GitHub integration is deliberately DISCONNECTED
 
-This directory's actual position in the connected Git repository is **not** the repo root. Verify with:
+This project's Git repository layout is unusual: this directory is at `esp-tracker/web` relative
+to the true repo root (`git rev-parse --show-toplevel` → `.../possible-client`, a parent directory
+whose only content is a top-level `esp-tracker/` folder), while manual CLI deploys
+(`vercel deploy --prod`, run from inside `web/`) package whatever directory you run them from,
+ignoring Vercel's "Root Directory" project setting entirely.
+
+That mismatch caused two separate, real production outages this project actually hit:
+
+1. **Root Directory unset/`.`**: a GitHub-triggered build looked for files at the true repo root,
+   found nothing deployable there, and the resulting broken deployment auto-aliased over a
+   perfectly good CLI deployment — the live site 404'd on every page.
+2. **Root Directory set to `esp-tracker/web`** (the "fix" for #1): CLI deploys run from inside
+   `web/` then appended that same path AGAIN (`web/esp-tracker/web`, which doesn't exist), and a
+   `vercel deploy` from the repo root with no project linked there instead created a **brand new,
+   wrong Vercel project** and started uploading the entire ~270MB monorepo before being caught and
+   deleted.
+
+Root Directory cannot be made to satisfy both deploy paths at once given this repo's actual shape.
+**The fix: the GitHub integration is unlinked from this Vercel project entirely** (`DELETE
+/v9/projects/{id}/link` via the Vercel API — there's no CLI subcommand for it). A `git push` now
+does nothing to Vercel, on purpose. The ONLY way this site deploys is:
 
 ```bash
-git rev-parse --show-toplevel   # -> .../possible-client  (NOT .../esp-tracker)
+cd web && vercel deploy --prod
 ```
 
-The repo (`github.com/Adrian-stuff/esp-tracker`) is cloned into a `possible-client` parent
-directory whose only content is a top-level `esp-tracker/` folder — so relative to the Git repo
-root, this dashboard lives at `esp-tracker/web`, not `web`.
+**Do not re-connect the GitHub integration or set a Root Directory** without re-solving this
+mismatch first — either fix would silently reintroduce one of the two outages above the next time
+someone pushes to `main`.
 
-**Action needed in the Vercel dashboard** (not fixable from `vercel.json` — Root Directory is a
-project setting, not a file-based config key): Project → Settings → General → **Root Directory**
-must be set to `esp-tracker/web`. `vercel project inspect web` was seen reporting `.` — if that is
-still the case, a GitHub-triggered build looks for files at the true repo root and will not find
-this dashboard.
+Also worth knowing, independent of the above: a GitHub-triggered deployment once redirected every
+request to `vercel.com/sso-api` (Vercel's own login wall) instead of serving this site — Deployment
+Protection applied to Production. Moot while the integration stays disconnected, but check Project
+→ Settings → **Deployment Protection** first if the integration is ever reconnected.
 
-This does NOT affect manual CLI deploys (`vercel deploy --prod` run from inside `web/`) — those
-package whatever directory you run the command from, ignoring the Root Directory project setting
-entirely. That is why CLI deploys have worked throughout this project even if the Git-triggered
-path is misconfigured.
-
-**Also check Deployment Protection.** A GitHub push once produced a Production deployment that
-redirected every request to `vercel.com/sso-api` (Vercel's own login wall) instead of serving this
-site — confirmed via the `Location` response header, not guessed. That happened on a
-git-integration deployment, not a CLI one. If it recurs, re-point the alias to the last good CLI
-deployment (`vercel alias set <good-deployment-url> <alias-domain>`) as an immediate fix, then
-check Project → Settings → **Deployment Protection** and make sure "Vercel Authentication" is not
-applied to the Production environment.
-
-`vercel.json` now pins `"framework": null` and `"buildCommand": null` explicitly, so a Git-triggered
-build cannot guess a framework or run an unwanted install/build step — it always serves these files
-as-is, matching exactly what a CLI deploy already does.
+`vercel.json` pins `"framework": null` and `"buildCommand": null` explicitly, so even a one-off
+manual re-deploy from the dashboard UI can't guess a framework or run an unwanted install/build
+step — it always serves these files as-is, matching exactly what the CLI deploy does.
 
 ## Pages
 

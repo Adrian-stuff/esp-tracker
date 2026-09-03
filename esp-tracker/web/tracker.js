@@ -183,8 +183,15 @@ function renderDevices(list) {
                    Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ device_id: b.dataset.locate }),
       });
-      b.textContent = r.ok ? "Asked — expect a fix in ~20s" : "Couldn't reach the tracker";
-      setTimeout(() => { b.disabled = false; b.textContent = "Locate now"; }, 25000);
+      const data = await r.json().catch(() => ({}));
+      // mock:true means this device has no real msisdn (every device the
+      // /dev tool creates) — see locate/index.ts's fallback. A real
+      // tracker takes ~20s for an actual round trip; the mock path
+      // inserts a location directly, so it shows up almost immediately.
+      b.textContent = !r.ok ? "Couldn't reach the tracker"
+        : data.mock ? "Simulated a fix (demo device) — check the map"
+        : "Asked — expect a fix in ~20s";
+      setTimeout(() => { b.disabled = false; b.textContent = "Locate now"; }, data.mock ? 3000 : 25000);
     }));
 }
 

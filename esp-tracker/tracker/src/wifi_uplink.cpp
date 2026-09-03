@@ -23,6 +23,7 @@ static constexpr uint32_t RECONNECT_BACKOFF_MS    = 30000;
 
 static uint32_t s_lastLocPush    = 0;
 static uint32_t s_lastOutboxPoll = 0;
+static uint32_t s_lastMockPoll   = 0;
 static uint32_t s_locSeq = 0;
 
 // Bounded HTTP timeouts everywhere below — same lesson as modem.cpp's
@@ -133,7 +134,52 @@ static void pushLocation() {
     Serial.printf("[wifi_uplink] ingest POST -> HTTP %d\n", code);
 }
 
-// Claims and relays any outbox message about THIS tracker's own child —
+// Poll the server for a mock location — demo/presentation mode. When the
+// tracker is indoors and GPS can't fix, dev-mock inserts fake coordinates
+// into Supabase. This function fetches the latest one so report.cpp can
+// send it via SMS instead of "no fix". One small GET, negligible cost.
+static void pollMockLocation() {
+    WiFiClientSecure tls;
+    tls.setInsecure();
+    HTTPClient http;
+    http.setConnectTimeout(HTTP_TIMEOUT_MS);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    if (!http.begin(tls, String(SUPABASE_URL) + "/functions/v1/mock-location")) return;
+    http.addHeader("Authorization", String("Bearer ") + DEVICE_TOKEN);
+    int code = http.GET();
+    if (code != 200) {
+        http.end();
+        return;
+    }
+    String resp = http.getString();
+    http.end();
+
+    JsonDocument doc;
+    if (deserializeJson(doc, resp)) return;
+    if (!doc["ok"].as<bool>()) return;
+
+    double lat = doc["lat"].as<double>();
+    double lon = doc["lon"].as<double>();
+    float acc  = doc["accuracy_m"].as<float>();
+    if (acc <= 0) acc = 12.0f;
+
+    // recorded_at from server — parse ISO string to epoch if present
+    uint32_t recordedAt = 0;
+    const char* ts = doc["recorded_at"] | "";
+    if (ts[0]) {
+        struct tm tm = {};
+        // Parse "2026-09-01T12:34:56.789Z" — strptime handles the Z
+        if (strptime(ts, "%Y-%m-%dT%H:%M:%S", &tm)) {
+            recordedAt = (uint32_t)mktime(&tm);
+        }
+    }
+    if (!recordedAt) {
+        struct timeval tv; gettimeofday(&tv, nullptr);
+        recordedAt = (uint32_t)tv.tv_sec;
+    }
+
+    locator::setMock(lat, lon, acc, recordedAt);
+}
 // see this file's header comment. Mirrors scanner/src/relay.cpp's
 // claim-then-ack pattern exactly (same server contract), just delivering
 // via this device's own SIM800L instead of the scanner's SIM900A.
@@ -226,6 +272,10 @@ void service() {
     if (now - s_lastOutboxPoll >= WIFI_UPLINK_OUTBOX_POLL_MS) {
         s_lastOutboxPoll = now;
         pollOutbox();
+    }
+    if (now - s_lastMockPoll >= WIFI_UPLINK_MOCK_POLL_MS) {
+        s_lastMockPoll = now;
+        pollMockLocation();
     }
 }
 

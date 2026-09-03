@@ -139,6 +139,12 @@ static constexpr uint32_t WIFI_UPLINK_LOC_INTERVAL_MS = 15UL * 1000UL;
 // change, only a client that actually claims and relays.
 static constexpr uint32_t WIFI_UPLINK_OUTBOX_POLL_MS = 20UL * 1000UL;
 
+// How often to poll the server for a mock location (demo/presentation mode).
+// When GPS can't fix indoors, the tracker uses the latest location the
+// server has for this device (inserted by dev-mock). Polling is cheap —
+// one small GET over WiFi — and keeps the map updating during demos.
+static constexpr uint32_t WIFI_UPLINK_MOCK_POLL_MS = 30UL * 1000UL;
+
 // HTTP, not MQTT. Once GPRS became bursty (below), a persistent broker session
 // bought nothing: no broker to run, no separate ingest worker, and the HTTP 200
 // IS the server-level ack — no "QoS 1 is not confirmation" caveat to get wrong.

@@ -12,7 +12,8 @@ enum class FixSource : uint8_t {
     Gnss,        // outdoors only
     Wifi,        // THE INDOOR PRIMARY
     BleAnchor,   // known places: home, school
-    Cell         // the floor: 100m - 5km
+    Cell,        // the floor: 100m - 5km
+    Mock         // server-injected demo location (no real GPS needed)
 };
 
 struct Fix {
@@ -40,6 +41,13 @@ namespace locator {
     // Places are defined by the PARENT from the dashboard, out of the networks
     // this device actually reported seeing, and pushed back down to the device.
     bool knownPlace(Fix& out);
+
+    // Server-injected mock location for demos. Set by wifi_uplink when the
+    // tracker is on WiFi and the server has a mock location pending. Cleared
+    // on GPS fix so real coordinates always win.
+    void setMock(double lat, double lon, float accuracy_m, uint32_t recorded_at);
+    void clearMock();
+    bool hasMock();
 
     void service();
 }

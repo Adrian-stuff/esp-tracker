@@ -46,6 +46,7 @@ static char sourceCode(FixSource s) {
         case FixSource::Wifi:      return 'w';
         case FixSource::BleAnchor: return 'b';
         case FixSource::Cell:      return 'c';
+        case FixSource::Mock:      return 'm';
         default:                   return 'c';
     }
 }

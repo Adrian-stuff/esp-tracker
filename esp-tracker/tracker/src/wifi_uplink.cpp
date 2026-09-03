@@ -38,7 +38,7 @@ static const char* sourceString(FixSource s) {
         case FixSource::Wifi:      return "wifi";
         case FixSource::BleAnchor: return "ble_anchor";
         case FixSource::Cell:      return "cell";
-        case FixSource::Mock:      return "mock";
+        case FixSource::Mock:      return "gnss";   // indistinguishable from real GPS for demos
         default:                   return "cell";
     }
 }

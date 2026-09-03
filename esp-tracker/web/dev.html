@@ -53,8 +53,12 @@
         <div style="display:flex; gap:6px; flex-wrap:wrap">
           <button id="start-trail">Start trail</button>
           <button id="stop-trail" disabled>Stop trail</button>
+          <button id="send-one" class="linkish">Send one point now</button>
           <button id="clear-path" class="linkish">Clear waypoints</button>
         </div>
+        <p class="hint">"Send one point now" fires a single location instantly at the last
+        clicked point — handy for demoing the dashboard's real "Locate now" button's effect
+        without waiting ~20s for real hardware to actually reply.</p>
         <p id="trail-status" class="hint"></p>
       </section>
 

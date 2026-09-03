@@ -654,6 +654,6 @@ void loop() {
     static uint32_t s_lastSmsPoll = 0;
     if (modem::radioReady() && now - s_lastSmsPoll >= 3000) {
         s_lastSmsPoll = now;
-        modem::pollSmsCommand(SMS_CMD_SECRET, saveSosNumber, saveScannerNumber, sos::onServerAck);
+        modem::pollSmsCommand(SMS_CMD_SECRET, saveSosNumber, saveScannerNumber, sos::onServerAck, report::forceNow);
     }
 }

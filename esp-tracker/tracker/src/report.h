@@ -15,4 +15,11 @@
 namespace report {
     void begin();
     void service();   // call from loop(); sends on the cadence set by motion::state() — see config.h's REPORT_INTERVAL_*_MS
+
+    // Makes the next service() call treat a LOC report as due immediately,
+    // regardless of where the moving/stationary cadence timer is. Driven by
+    // the inbound "LOCATE" SMS command (see modem.h's pollSmsCommand) — the
+    // dashboard's "Locate now" button. A no-op if a fix is already being
+    // acquired, so spamming the button can't restart GPS mid-acquisition.
+    void forceNow();
 }

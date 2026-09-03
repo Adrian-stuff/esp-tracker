@@ -50,7 +50,13 @@ export async function sendSms(to: string, text: string): Promise<SmsResult> {
 // is what makes "locate now" work without holding a TCP socket open against
 // carrier NAT.
 export async function sendLocateCommand(msisdn: string): Promise<SmsResult> {
-  return sendSms(msisdn, `LOCATE ${Deno.env.get("SMS_CMD_SECRET") ?? ""}`);
+  // Wire format is "<secret> <command>" everywhere else this project sends
+  // an inbound device command (see tracker/src/modem.cpp's pollSmsCommand —
+  // it only recognizes a command if the secret is the FIRST thing in the
+  // body). This used to send "LOCATE <secret>" — secret last — which could
+  // never have matched; combined with the tracker firmware not implementing
+  // LOCATE at all until now, "Locate now" was dead in both directions.
+  return sendSms(msisdn, `${Deno.env.get("SMS_CMD_SECRET") ?? ""} LOCATE`);
 }
 
 export function sosText(

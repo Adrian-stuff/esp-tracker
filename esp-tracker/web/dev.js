@@ -77,6 +77,7 @@ function initApp() {
 
   $("start-trail").addEventListener("click", startTrail);
   $("stop-trail").addEventListener("click", stopTrail);
+  $("send-one").addEventListener("click", sendOnePoint);
   $("trigger-sos").addEventListener("click", triggerSos);
   $("resolve-sos").addEventListener("click", resolveSos);
   $("notify-parent").addEventListener("click", notifyParent);
@@ -157,6 +158,25 @@ function stopTrail() {
   if (trailTimer) { clearInterval(trailTimer); trailTimer = null; }
   $("start-trail").disabled = false;
   $("stop-trail").disabled = true;
+}
+
+async function sendOnePoint() {
+  const deviceId = $("device-id").value.trim();
+  if (!deviceId) { log("set a device id first"); return; }
+  let lat, lon;
+  if (waypoints.length) [lat, lon] = waypoints[waypoints.length - 1];
+  else if (trailMarker) { const ll = trailMarker.getLatLng(); lat = ll.lat; lon = ll.lng; }
+  else { const c = map.getCenter(); lat = c.lat; lon = c.lng; }
+  const battery_pct = parseFloat($("batt-start").value) || 90;
+
+  if (trailMarker) map.removeLayer(trailMarker);
+  trailMarker = L.circleMarker([lat, lon], { radius: 8, color: "#0b6e68", fillOpacity: 0.8 }).addTo(map);
+
+  const { ok, data } = await callMock({
+    action: "location", device_id: deviceId, lat, lon,
+    accuracy_m: 8 + Math.round(Math.random() * 6), source: "gnss", battery_pct,
+  });
+  log(ok ? `single point sent (batt ${battery_pct}%)` : `single point FAILED: ${JSON.stringify(data)}`);
 }
 
 // --------------------------------------------------------------- sos -----

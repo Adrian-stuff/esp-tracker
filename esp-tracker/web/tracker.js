@@ -322,9 +322,34 @@ function subscribe() {
 }
 
 // --------------------------------------------------------------- beep -----
+// Browsers suspend a freshly created AudioContext until a real user gesture
+// unlocks audio for this origin — and an SOS arrives over Realtime, not a
+// click, so startBeep() below was hitting that block silently (bare
+// try{}catch{}, no visible failure) on any tab that hadn't already clicked
+// something first. Unlocking once on the very first click/touch/key on the
+// page — which happens naturally at sign-in, well before any real SOS can
+// fire — means every later startBeep() call starts already "running".
+// The SOS banner itself (showSos() above) never depended on this and always
+// worked regardless; this only fixes the sound silently not playing.
+let audioUnlocked = false;
+function unlockAudioOnce() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume().finally(() => ctx.close());
+  } catch {}
+}
+["click", "touchstart", "keydown"].forEach((ev) =>
+  document.addEventListener(ev, unlockAudioOnce, { once: true, passive: true }));
+
 function startBeep() {
   try {
     sosAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Belt-and-suspenders: even after the page-load unlock above, resume()
+    // is cheap and a no-op if already running — covers a tab that's been
+    // idle long enough for the browser to re-suspend it.
+    sosAudioCtx.resume().catch(() => {});
     sosBeepOsc = sosAudioCtx.createOscillator();
     const gain = sosAudioCtx.createGain();
     sosBeepOsc.type = "square";
@@ -339,7 +364,9 @@ function startBeep() {
       gain.gain.value = on ? 0.3 : 0;
       on = !on;
     }, 200);
-  } catch {}
+  } catch (e) {
+    console.warn("[sos] alarm sound failed to play (banner still shown regardless):", e);
+  }
 }
 
 function stopBeep() {

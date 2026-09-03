@@ -525,7 +525,8 @@ int8_t networkStatus() {
 bool pollSmsCommand(const char* secret,
                     void (*onSetSos)(const char*),
                     void (*onSetScanner)(const char*),
-                    void (*onAck)(const char*)) {
+                    void (*onAck)(const char*),
+                    void (*onLocate)()) {
     while (s_serial.available()) s_serial.read();
     atSend("AT+CMGL=\"REC UNREAD\"");
     char buf[512];
@@ -581,6 +582,9 @@ bool pollSmsCommand(const char* secret,
                 while (*id == ' ') id++;
                 onAck(id);
                 snprintf(reply, sizeof reply, "Acked %s", id);
+            } else if (strcmp(cmd, "LOCATE") == 0 && onLocate) {
+                onLocate();
+                snprintf(reply, sizeof reply, "Locating now");
             } else {
                 snprintf(reply, sizeof reply, "Unknown cmd: %s", cmd);
             }

@@ -134,6 +134,15 @@ namespace report {
 
 void begin() { s_lastSent = 0; s_lastWifiSent = 0; s_lastScanHash = 0; s_acquiring = false; }
 
+void forceNow() {
+    if (s_acquiring) {
+        Serial.println("[report] LOCATE requested — already acquiring a fix, letting it finish");
+        return;
+    }
+    Serial.println("[report] LOCATE requested — forcing an immediate fix attempt");
+    s_lastSent = 0;   // service()'s due-check treats this as overdue
+}
+
 void service() {
     uint32_t now = millis();
 

@@ -117,8 +117,14 @@ namespace modem {
     // relay-sms via the scanner's existing outbox relay once an SOS this
     // device sent has actually reached the server. See sos::onServerAck()
     // and store.h's file header for what this closes the loop on.
+    //
+    // onLocate fires for "<secret> LOCATE" — sent by
+    // supabase/functions/locate/index.ts (the dashboard's "Locate now"
+    // button) via the SMS gateway direct to this device's own number, not
+    // through the scanner or the outbox. See report::forceNow().
     bool pollSmsCommand(const char* secret,
                         void (*onSetSos)(const char*),
                         void (*onSetScanner)(const char*),
-                        void (*onAck)(const char*) = nullptr);
+                        void (*onAck)(const char*) = nullptr,
+                        void (*onLocate)() = nullptr);
 }

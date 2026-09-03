@@ -55,12 +55,27 @@ function json(b: unknown, status = 200) {
 // Ensures the mock device row exists so locations/sos_events' FK
 // constraints are satisfiable, WITHOUT ever touching a real device's real
 // token_hash if device_id happens to collide with one already registered.
+//
+// tracker.html renders `child_name || name` as the device's on-screen
+// title — defaulting either to the raw device_id (e.g. "demo-tracker-01")
+// is exactly what gives a mock device away to an audience at a glance. If
+// this device already exists (created by an earlier dev-mock call, so its
+// token_hash is guaranteed to start with "dev-mock-", never a real device's
+// real hash), a later call that finally supplies a childName updates the
+// display name in place — the presenter can name it any time, not only on
+// first use, without deleting and recreating the device.
 async function ensureDevice(deviceId: string, childName?: string) {
-  const { data: existing } = await db.from("devices").select("id").eq("id", deviceId).maybeSingle();
-  if (existing) return;
+  const { data: existing } = await db.from("devices").select("id,token_hash").eq("id", deviceId).maybeSingle();
+  if (existing) {
+    if (childName && existing.token_hash?.startsWith("dev-mock-")) {
+      await db.from("devices").update({ name: childName, child_name: childName }).eq("id", deviceId);
+    }
+    return;
+  }
+  const label = childName || "Tracker";
   await db.from("devices").insert({
-    id: deviceId, kind: "tracker", name: deviceId,
-    child_name: childName || deviceId,
+    id: deviceId, kind: "tracker", name: label,
+    child_name: childName || label,
     token_hash: `dev-mock-${deviceId}`,   // never a valid bearer token — see ingest's sha256 check
     active: true,
   });

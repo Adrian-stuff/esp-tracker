@@ -151,6 +151,7 @@ function startTrail() {
     const { ok, data } = await callMock({
       action: "location", device_id: deviceId, lat, lon,
       accuracy_m: 8 + Math.round(Math.random() * 6), source: "gnss", battery_pct,
+      child_name: $("child-name").value.trim() || undefined,
     });
     step++;
     $("trail-status").textContent = `Running: ${step}/${steps} points sent`;
@@ -186,6 +187,7 @@ async function sendOnePoint() {
   const { ok, data } = await callMock({
     action: "location", device_id: deviceId, lat, lon,
     accuracy_m: 8 + Math.round(Math.random() * 6), source: "gnss", battery_pct,
+    child_name: $("child-name").value.trim() || undefined,
   });
   log(ok ? `single point sent (batt ${battery_pct}%)` : `single point FAILED: ${JSON.stringify(data)}`);
 }
@@ -199,7 +201,10 @@ async function triggerSos() {
   else if (waypoints.length) [lat, lon] = waypoints[waypoints.length - 1];
   else { const c = map.getCenter(); lat = c.lat; lon = c.lng; }
 
-  const { ok, data } = await callMock({ action: "sos", device_id: deviceId, lat, lon, accuracy_m: 10 });
+  const { ok, data } = await callMock({
+    action: "sos", device_id: deviceId, lat, lon, accuracy_m: 10,
+    child_name: $("child-name").value.trim() || undefined,
+  });
   if (ok) {
     lastSosEventId = data.event_id;
     $("resolve-sos").disabled = false;

@@ -38,7 +38,12 @@
       <section class="panel">
         <h2>Target device</h2>
         <input id="device-id" type="text" placeholder="demo-tracker-01" value="demo-tracker-01">
-        <p class="hint">Auto-created if it doesn't exist yet — no SQL setup needed before a demo.</p>
+        <label class="field-label" style="margin-top:8px; display:block">Display name (shown on the real dashboard)</label>
+        <input id="child-name" type="text" placeholder="e.g. Maya" value="Maya">
+        <p class="hint">Auto-created if it doesn't exist yet — no SQL setup needed before a demo. The
+        display name is what actually shows on tracker.html — set it to something that doesn't read
+        as a placeholder, or an audience member glancing at the screen sees "demo-tracker-01" instead
+        of a name. Renaming an existing device just needs one more action below; nothing to delete.</p>
       </section>
 
       <section class="panel">

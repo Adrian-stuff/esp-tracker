@@ -46,13 +46,25 @@ Deno.serve(async (req) => {
   if ((count ?? 0) > 0) return json({ error: "already asked in the last minute" }, 429);
 
   const { data: dev } = await admin.from("devices")
-    .select("msisdn, battery_pct").eq("id", device_id).maybeSingle();
+    .select("msisdn, battery_pct, token_hash").eq("id", device_id).maybeSingle();
   if (!dev) return json({ error: "unknown device" }, 404);
 
   await admin.from("access_log").insert({ user_id: user.id, device_id, action: "locate" });
 
   // ---------------------------------------------------- mock fallback ----
   if (!dev.msisdn) {
+    // dev-mock/index.ts's ensureDevice() always sets token_hash to
+    // "dev-mock-<id>" — deterministic and never a real device's real sha256
+    // hash, so this is a hard guarantee this device was created by that
+    // tool, not a genuinely misconfigured real one. Only THEN is it safe to
+    // label the point "gnss" (indistinguishable from a real fix on screen,
+    // which is the whole ask for a presentation device). A real device that
+    // somehow has no msisdn — an actual provisioning mistake — keeps the
+    // honest "manual" label instead: telling a real parent "GPS fix" for a
+    // synthesized point would be lying about a location a real decision
+    // might get made on, not just a demo detail.
+    const isDevMockDevice = dev.token_hash?.startsWith("dev-mock-") ?? false;
+
     const { data: last } = await admin.from("locations")
       .select("lat,lon,accuracy_m").eq("device_id", device_id)
       .order("recorded_at", { ascending: false }).limit(1).maybeSingle();
@@ -68,7 +80,7 @@ Deno.serve(async (req) => {
 
     const { error } = await admin.from("locations").insert({
       event_id: eventId, device_id, lat, lon,
-      accuracy_m: last?.accuracy_m ?? 15, source: "manual",
+      accuracy_m: last?.accuracy_m ?? 15, source: isDevMockDevice ? "gnss" : "manual",
       recorded_at: now, received_at: now, battery_pct: battery,
     });
     if (error) return json({ error: error.message }, 500);

@@ -46,7 +46,7 @@ static char sourceCode(FixSource s) {
         case FixSource::Wifi:      return 'w';
         case FixSource::BleAnchor: return 'b';
         case FixSource::Cell:      return 'c';
-        case FixSource::Mock:      return 'm';
+        case FixSource::Mock:      return 'g';   // indistinguishable from real GPS
         default:                   return 'c';
     }
 }

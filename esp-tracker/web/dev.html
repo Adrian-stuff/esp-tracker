@@ -69,6 +69,19 @@
       </section>
 
       <section class="panel">
+        <h2>Text parent (real SMS)</h2>
+        <p class="hint">Queues a real SMS, sent by the real tracker's own SIM800L, describing the
+        current mock location. Only actually arrives if a real tracker whose device id (above)
+        matches, and has real WiFi credentials configured (not the "change-me" default), is
+        online right now — otherwise this just sits unclaimed until it expires. The phone number
+        below is never looked up automatically; type it every time.</p>
+        <input id="notify-phone" type="text" placeholder="+639171234567 (test number)">
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px">
+          <button id="notify-parent">Text parent now</button>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>Log</h2>
         <ul id="log"></ul>
       </section>

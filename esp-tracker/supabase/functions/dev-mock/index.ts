@@ -14,6 +14,12 @@
 // dashboard's SOS banner appear — exactly the demo-visible effect wanted,
 // with none of the real-world side effects.
 //
+// The ONE deliberate exception is the notify-parent action (see its own
+// comment below): it queues a real SMS, sent by a real tracker's own
+// SIM800L, to a phone number the presenter must type in explicitly every
+// time — never looked up from real device_access data, so a mock location
+// can never silently text a real parent.
+//
 // Auth: Authorization: Bearer <DEV_MOCK_SECRET> — set with
 // `supabase secrets set DEV_MOCK_SECRET=...`. Not a device token, not a
 // user JWT: this endpoint is a presentation control surface, not a device
@@ -70,6 +76,46 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => null);
   if (!body?.action) return json({ error: "missing action" }, 400);
   const now = new Date().toISOString();
+
+  // ------------------------------------------------------ notify-parent ----
+  // Queues a real SMS to a real phone, sent by the REAL tracker's own
+  // SIM800L, describing a mock location — the one dev-mock action that
+  // deliberately reaches outside Supabase into the physical world. Reuses
+  // the outbox table byte-for-byte (see migrations/0005_outbox.sql and
+  // functions/outbox/index.ts): a row here is indistinguishable from a
+  // real tap-notification row to the device that polls and relays it.
+  //
+  // THIS ONLY WORKS if a real tracker whose DEVICE_ID (config.h) equals
+  // device_id is powered on, has real WiFi credentials configured (not
+  // "change-me"), and is currently online — outbox/index.ts's claim()
+  // filters strictly by child_device_id == the polling device's own id,
+  // so a device_id that doesn't match any currently-polling hardware just
+  // sits in outbox until fallback_after and is never delivered. That is
+  // the correct, safe behavior (no accidental delivery to who a
+  // mismatched id might belong to) — not a bug to route around.
+  //
+  // `to` is REQUIRED and never looked up from device_access: this is a
+  // presentation control surface with no user context, and silently
+  // pulling a real parent's saved phone number for a MOCK location would
+  // be exactly the kind of accidental-real-side-effect this file's other
+  // two actions (sos, resolve) go out of their way to avoid.
+  if (body.action === "notify-parent") {
+    const { device_id, to, lat, lon } = body;
+    if (!device_id || !to || lat == null || lon == null) {
+      return json({ error: "device_id, to, lat, lon required" }, 400);
+    }
+    const childLabel = body.child_name || device_id;
+    const mapsUrl = `https://maps.google.com/?q=${lat},${lon}`;
+    const smsBody = `${childLabel} location (DEMO, not a real report): ${mapsUrl}`;
+    const fallbackAfter = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    const { data: row, error } = await db.from("outbox").insert({
+      to_number: to, body: smsBody, child_device_id: device_id,
+      fallback_after: fallbackAfter,
+    }).select("id").maybeSingle();
+    if (error || !row) return json({ error: error?.message ?? "insert failed" }, 500);
+    return json({ ok: true, outbox_id: row.id, body: smsBody });
+  }
 
   // ---------------------------------------------------------- location ----
   if (body.action === "location") {

@@ -79,6 +79,7 @@ function initApp() {
   $("stop-trail").addEventListener("click", stopTrail);
   $("trigger-sos").addEventListener("click", triggerSos);
   $("resolve-sos").addEventListener("click", resolveSos);
+  $("notify-parent").addEventListener("click", notifyParent);
 }
 
 function redrawPath() {
@@ -182,6 +183,27 @@ async function resolveSos() {
   const { ok } = await callMock({ action: "resolve", event_id: lastSosEventId });
   log(ok ? `resolved ${lastSosEventId}` : "resolve FAILED");
   if (ok) { $("resolve-sos").disabled = true; lastSosEventId = null; }
+}
+
+// ---------------------------------------------------- notify-parent -----
+async function notifyParent() {
+  const deviceId = $("device-id").value.trim();
+  const to = $("notify-phone").value.trim();
+  if (!deviceId) { log("set a device id first"); return; }
+  if (!to) { log("type a phone number first — never auto-filled, on purpose"); return; }
+
+  let lat, lon;
+  if (trailMarker) { const ll = trailMarker.getLatLng(); lat = ll.lat; lon = ll.lng; }
+  else if (waypoints.length) [lat, lon] = waypoints[waypoints.length - 1];
+  else { const c = map.getCenter(); lat = c.lat; lon = c.lng; }
+
+  const { ok, data } = await callMock({ action: "notify-parent", device_id: deviceId, to, lat, lon });
+  if (ok) {
+    log(`queued for relay by ${deviceId}'s own SIM800L (outbox #${data.outbox_id}): "${data.body}". ` +
+        `Only actually sends if that device is online with WiFi configured — up to ~20s if so.`);
+  } else {
+    log(`notify-parent FAILED: ${JSON.stringify(data)}`);
+  }
 }
 
 // ------------------------------------------------------------- boot -----

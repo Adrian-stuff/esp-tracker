@@ -7,11 +7,23 @@
 // USB serial. This sketch does no attendance logic at all — it is purely
 // a serial-to-RFID bridge, because a PC can't drive an RC522 directly.
 //
-// Wiring matches scanner-uno/include/pins.h's proven RC522 hookup (same
-// spare Uno+RC522 used for ../selftest_rfid/): SS=10, RST=9, SPI on the
-// fixed 11/12/13 pins, 3.3V power to the RC522 ONLY (5V destroys it).
+// Uno wiring matches scanner-uno/include/pins.h's proven RC522 hookup
+// (same spare Uno+RC522 used for ../selftest_rfid/): SS=10, RST=9, SPI on
+// the fixed 11/12/13 pins. ESP32 wiring assumed to match ../scanner/'s
+// proven ESP32+RC522 pinout instead (SS=5, RST=4, SPI on ESP32's hardware
+// VSPI default pins 18/19/23) — see platformio.ini's [env:esp32] comment
+// if your board is wired differently. 3.3V power to the RC522 ONLY in
+// either case (5V destroys it).
+#if defined(ESP32)
+static const uint8_t PIN_SS   = 5;
+static const uint8_t PIN_RST  = 4;
+static const uint8_t PIN_SCK  = 18;
+static const uint8_t PIN_MISO = 19;
+static const uint8_t PIN_MOSI = 23;
+#else
 static const uint8_t PIN_SS  = 10;
 static const uint8_t PIN_RST = 9;
+#endif
 
 // Must match scanner-uno/src/card.h and include/config.h::CARD_KEY_A
 // EXACTLY, or every card this writes will fail to authenticate on the
@@ -343,7 +355,11 @@ static void handleRead() {
 void setup() {
     Serial.begin(9600);
     delay(200);           // let the USB-serial side settle after reset
+#if defined(ESP32)
+    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_SS);
+#else
     SPI.begin();
+#endif
     rfid.PCD_Init();
     delay(50);
 

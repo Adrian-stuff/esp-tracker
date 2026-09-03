@@ -299,7 +299,7 @@ main{flex:1; display:flex; min-height:0}
   font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:4px;
   background:var(--bg); color:var(--ink);
 }
-#dev-sidebar #device-id{
+#dev-sidebar #device-id, #dev-sidebar #notify-phone{
   width:100%; font:inherit; padding:8px 10px; border:1px solid var(--line);
   border-radius:4px; background:var(--bg); color:var(--ink); margin-top:6px;
 }

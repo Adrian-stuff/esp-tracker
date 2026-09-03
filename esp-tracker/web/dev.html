@@ -114,8 +114,11 @@
             </label>
             <label>Radius (m) <input id="place-radius" type="number" min="5" step="5" value="40"></label>
           </div>
-          <label class="field-label" style="margin-top:6px">BSSIDs (comma-separated)</label>
-          <input id="place-bssids" type="text" placeholder="AA:BB:CC:DD:EE:FF, 11:22:33:44:55:66" style="width:100%">
+          <label class="field-label" style="margin-top:6px">WiFi network name (SSID)</label>
+          <input id="place-ssid" type="text" placeholder="e.g. Presentation-WiFi" style="width:100%">
+          <p class="hint">Just type the network name — no need to look up MAC addresses.</p>
+          <label class="field-label" style="margin-top:6px">BSSIDs (optional, comma-separated)</label>
+          <input id="place-bssids" type="text" placeholder="AA:BB:CC:DD:EE:FF (optional)" style="width:100%">
           <div class="dev-row" style="margin-top:6px">
             <label>Lat <input id="place-lat" type="number" step="any" placeholder="14.5995"></label>
             <label>Lon <input id="place-lon" type="number" step="any" placeholder="120.9842"></label>
@@ -126,11 +129,13 @@
         <hr style="border:none; border-top:1px solid var(--line); margin:12px 0">
         <p class="hint" style="margin-bottom:6px">Mock a WiFi scan to trigger place matching.</p>
         <div class="dev-row">
-          <label style="flex:2">BSSIDs
-            <input id="scan-bssids" type="text" placeholder="AA:BB:CC:DD:EE:FF, ...">
+          <label style="flex:2">WiFi network name (SSID)
+            <input id="scan-ssid" type="text" placeholder="e.g. Presentation-WiFi">
           </label>
           <label style="flex:1">RSSI <input id="scan-rssi" type="number" min="-100" max="0" value="-45"></label>
         </div>
+        <label class="field-label" style="margin-top:6px">BSSIDs (optional override)</label>
+        <input id="scan-bssids" type="text" placeholder="leave blank to auto-generate from SSID">
         <button id="send-wifiscan" class="btn-ghost" style="width:100%; margin-top:6px">Send mock WiFi scan</button>
         <p id="scan-result" class="hint"></p>
       </section>

@@ -282,16 +282,28 @@ async function loadPlaces() {
 
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
+// Generate a deterministic fake BSSID from an SSID string.
+// Server hashes BSSIDs before storage, so a deterministic mock is fine.
+function ssidToBssid(ssid) {
+  let h = 0;
+  for (let i = 0; i < ssid.length; i++) h = ((h << 5) - h + ssid.charCodeAt(i)) | 0;
+  const b = [(h >> 24) & 0xff, (h >> 16) & 0xff, (h >> 8) & 0xff, h & 0xff, 0x42, 0x01];
+  return b.map((x) => x.toString(16).padStart(2, "0")).join(":");
+}
+
 async function createPlace() {
   const deviceId = $("device-id").value.trim();
   if (!deviceId) { log("set a device id first"); return; }
   const name = $("place-name").value.trim();
   const kind = $("place-kind").value;
   const radius = parseFloat($("place-radius").value) || 40;
+  const ssid = $("place-ssid").value.trim();
   const bssidsRaw = $("place-bssids").value.trim();
   if (!name) { log("place name required"); return; }
-  if (!bssidsRaw) { log("at least one BSSID required"); return; }
-  const bssids = bssidsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!ssid && !bssidsRaw) { log("enter a WiFi name (SSID) or at least one BSSID"); return; }
+  let bssids = bssidsRaw
+    ? bssidsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [ssidToBssid(ssid)];
   const lat = $("place-lat").value ? parseFloat($("place-lat").value) : null;
   const lon = $("place-lon").value ? parseFloat($("place-lon").value) : null;
 
@@ -300,12 +312,14 @@ async function createPlace() {
     name, kind, bssids, lat, lon, radius_m: radius,
   });
   if (ok) {
-    log(`place created: ${name} (${bssids.length} BSSIDs)`);
+    log(`place created: ${name} (${ssid || bssids.length + " BSSIDs"})`);
     // Cache raw BSSIDs so "use" can fill the scan form later
     if (data.place?.id) {
       localStorage.setItem(`dev_bssid_cache_${data.place.id}`, bssids.join(", "));
+      if (ssid) localStorage.setItem(`dev_ssid_cache_${data.place.id}`, ssid);
     }
     $("place-name").value = "";
+    $("place-ssid").value = "";
     $("place-bssids").value = "";
     loadPlaces();
   } else {
@@ -331,8 +345,14 @@ function usePlaceBssids(place) {
   // we cache raw BSSIDs in localStorage keyed by place ID when creating,
   // and read them back here. Falls back to hashes if no cache exists.
   const cacheKey = `dev_bssid_cache_${place.id}`;
+  const ssidCacheKey = `dev_ssid_cache_${place.id}`;
   const cached = localStorage.getItem(cacheKey);
-  if (cached) {
+  const cachedSsid = localStorage.getItem(ssidCacheKey);
+  if (cachedSsid) {
+    $("scan-ssid").value = cachedSsid;
+    $("scan-bssids").value = cached || "";
+    log(`filled scan from "${place.name}" (SSID: ${cachedSsid})`);
+  } else if (cached) {
     $("scan-bssids").value = cached;
     log(`filled scan BSSIDs from "${place.name}" (cached raw values)`);
   } else {
@@ -345,11 +365,14 @@ function usePlaceBssids(place) {
 async function sendWifiScan() {
   const deviceId = $("device-id").value.trim();
   if (!deviceId) { log("set a device id first"); return; }
+  const ssid = $("scan-ssid").value.trim();
   const bssidsRaw = $("scan-bssids").value.trim();
-  if (!bssidsRaw) { log("enter at least one BSSID"); return; }
+  if (!ssid && !bssidsRaw) { log("enter a WiFi name (SSID) or at least one BSSID"); return; }
   const rssi = parseInt($("scan-rssi").value) || -45;
-  const bssids = bssidsRaw.split(",").map((s) => s.trim()).filter(Boolean);
-  const aps = bssids.map((b) => ({ bssid: b, ssid: "mock-ap", rssi }));
+  const bssids = bssidsRaw
+    ? bssidsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [ssidToBssid(ssid)];
+  const aps = bssids.map((b) => ({ bssid: b, ssid: ssid || "mock-ap", rssi }));
 
   const { ok, data } = await callMock({ action: "wifiscan", device_id: deviceId, aps });
   if (ok) {

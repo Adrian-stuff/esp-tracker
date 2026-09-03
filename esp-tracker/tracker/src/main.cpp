@@ -651,7 +651,16 @@ void loop() {
     // MODEM_CFUN_IDLE_ENABLED block. Opens periodic windows to check for
     // incoming SMS and drain any store.cpp backlog, then aggressively
     // drops back to CFUN=4 (LiPo BMS brownout mitigation).
-    modem::servicePowerCycle();
+    //
+    // GATED on sos::smsIdle(): during an SOS, sos::serviceSms() blocks
+    // inside modem::sendSms() for up to ~15s (wake + register + send).
+    // If servicePowerCycle() ran concurrently, its WaitReg timeout could
+    // call closeWindow() → AT+CFUN=4 right in the middle of that send,
+    // killing the SMS. With this gate, the scheduler stays idle until the
+    // SOS immediate sends complete — sendSms() manages its own wake/sleep
+    // cycle internally (selfWoke path) and doesn't need the scheduler's
+    // help during SOS.
+    if (sos::smsIdle()) modem::servicePowerCycle();
 
     // Periodic battery check (estimated, no ADC)
     if (now - s_lastBatteryCheck >= BATTERY_CHECK_INTERVAL_MS) {

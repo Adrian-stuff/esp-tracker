@@ -278,6 +278,14 @@ void servicePowerCycle() {
     }
 
     case RadioState::WaitReg: {
+        // If sendSms() woke the radio and put it back to sleep while we
+        // were blocked (sos::smsIdle() gate in main loop), the radio is
+        // already back at CFUN=4. Reset to Idle — no need to closeWindow().
+        if (!s_radioAwake) {
+            s_urgentRequest = false;
+            s_radioState = RadioState::Idle;
+            return;
+        }
         if (now - s_lastRegPoll >= 1000) {   // poll at most once/sec — non-blocking
             s_lastRegPoll = now;
             int8_t stat = networkStatus();
@@ -297,6 +305,14 @@ void servicePowerCycle() {
     }
 
     case RadioState::Window: {
+        // sendSms() may have already closed the window (selfWoke path)
+        // while we were blocked by sos::smsIdle() in the main loop. If
+        // the radio is already asleep, reset to Idle without sending a
+        // redundant CFUN=4 — the SIM800L is already there.
+        if (!s_radioAwake) {
+            s_radioState = RadioState::Idle;
+            return;
+        }
         // Nothing to actively do here: main.cpp polls pollSmsCommand()
         // while radioReady() is true, and store::drain() (already gated on
         // sos::smsIdle()) runs from loop() regardless — it'll find
